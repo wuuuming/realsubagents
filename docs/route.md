@@ -252,6 +252,8 @@ realctx (WtzLAS) and realtasks (st0nie) are third-party packages, installed loca
 | U-8 | realtasks: cross-session task logs | v0.2 | Not needed: review runs tests itself | ⬜ |
 | U-9 | realtasks: shared build queue | v0.2 | Local semaphore in realsubagents | ⬜ |
 | U-10 | Pi: an extension API to record model usage in the session (`SessionManager.appendUsage` exists but extensions only get `ReadonlySessionManager`); realctx: record its historian and rewrite calls with it. Today their cost is missing from the session file, so the meter (R0.0.3) under-counts realctx's background spend | v0.0 | Benchmark-only extension that wraps `ModelRegistry.prototype.complete` / `streamSimple` and appends usage to a sidecar JSONL per run, which the meter adds | 🟨 workaround: `extensions/rsa-bench-usage` |
+| U-11 | realctx: per-process settings overlay for Context and History, sharing one memory store (design §17.1) | v0.1 | Benchmark: per-run `REALCTX_HOME` with explicit settings (D-23); v0.1 runs every role on the same settings | ⬜ |
+| U-12 | realctx: cache lifetime from `PI_CACHE_RETENTION`; resolved lifetime in the library (design §17.1) | v0.1 | Set `context.cacheTtlByModel` to match the retention a process uses; read the same value in realsubagents | ⬜ |
 
 ### T-W Windows and platform
 
@@ -273,7 +275,7 @@ realctx (WtzLAS) and realtasks (st0nie) are third-party packages, installed loca
 | --- | --- | --- | --- |
 | DD-1 | Crash recovery contradicts itself: §11 says running tasks go to `blocked`, §16 says back to their pre-dispatch state; choose one | v0.1 | ⬜ |
 | DD-2 | Missing `review → failed` and `blocked → failed` transitions; reword "exactly one event type per transition" | v0.1 | ⬜ |
-| DD-3 | Resume-or-fresh policy for idle workers once their cache is cold (`cache_warming_decision` hook) | v0.1 | ⬜ |
+| DD-3 | Resume-or-fresh policy for idle workers once their cache is cold (`cache_warming_decision` hook). Options now include long retention (`PI_CACHE_RETENTION=long`, 1 h, write at 2× base) for workers likely to be resumed; the policy must use the lifetime realctx resolves (U-12) | v0.1 | ⬜ |
 | DD-4 | Precedence of ScopeGuard, Watchdog and the review diff check | v0.2 | ⬜ |
 | DD-5 | Who writes acceptance tests (G0 in the contract subtask, or the worker first) | v0.2 | ⬜ |
 | DD-6 | Redraw the topology and module diagrams for rev 2 | Any time | ⬜ |
@@ -297,6 +299,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | Consult deadline | G0 | H-3 | v0.2 |
 | Approval-policy thresholds | §8.1 | H-3, veto rate | v0.2 |
 | Merge-train batch size | MergeQueue | H-9, time | v0.2 |
+| realctx Context/History settings per role (protect turns, apply threshold and ceiling, history prepare threshold) | U-11 | Cost per task, g\_w | v0.1 |
 | Build-queue cap | config | Time, CPU | v0.2 |
 | Partition cross-group ratio (15%) and k | Partitioner | Rate of cross-group tasks | v0.2 |
 | Watchdog thresholds | Watchdog | False-alert rate | v0.2 |
@@ -313,6 +316,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | K-3 | Upstream does not accept the realctx / realtasks changes | Medium | Medium | Adapters (T-U); vendor if needed | all |
 | K-4 | Worktrees on Windows without a Dev Drive are too slow or too large | Medium | Medium | Measured (W-2): source is cheap, build outputs are the cost. Tier B seeding (W-7, W-8), tree pool, disk budget (D-17) | P0, v0.2 |
 | K-11 | A tool writes through a hard link and silently changes the base tree | Low | High | Small files copied, not linked; per-toolchain adapters only; the seed manifest check (`verify`) runs in the adapter's test and after benchmark runs | P0, v0.2 |
+| K-12 | A realctx update changes defaults or behaviour mid-phase (v3 reset all Context/History settings) and breaks comparability of runs | Medium | Medium | Pin the realctx commit per phase (`bench/pins.json`), write explicit settings per run, refit the cost model on a change (D-23) | v0.0 |
 | K-5 | Benchmark noise from nondeterministic models | High | Medium | N = 3, medians and IQR, fixed commits | v0.0 |
 | K-6 | Provider rate limits when workers run in parallel | Medium | High | Measure; per-group providers | v0.2 |
 | K-7 | The judge is miscalibrated | Medium | Medium | Labelled set; needs\_human fallback | v0.1 |
@@ -349,6 +353,8 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-19 | 2026-11-09 | Task format and validation: a task is reconstructed from a historical commit (`source`) at its parent (`base`); the commit's tests are withheld and checked out only at acceptance; `prompt.md` states the problem as the issue did, not the fix. A task enters the set only if `--mode base` is rejected and `--mode reference` (the historical change) is accepted; the reference run writes the regression baseline list | R0.0.1, R0.0.4 |
 | D-20 | 2026-11-09 | realctx's own model calls in benchmark runs (historian `history.model` and memory edit/merge `rewriteModel`, which otherwise fall back to the session model) use `anthropic/claude-haiku-5-5`, per D-13; the runner sets both in the per-run config. The user's `history.model` (`openai/gpt-6-luna`) is not used in benchmarks | D-13; pilot found rewrites on opus |
 | D-21 | 2026-11-09 | v0.0 budget $100 in total (the pilot included). Task set cut to 6 small (N = 3), 3 large serial (N = 2), 4 large parallel (N = 2); about $81 estimated, rest is reserve. One large task is run first and the counts re-planned from its cost. `bench/run.ts` refuses an agent run when spend so far plus the per-run cap would exceed the phase budget. Replaces D-13's $150 per phase for v0.0 | User, 2026-11-09 |
+| D-22 | 2026-11-09 | Task set sources. pi gives 5 small, 2 large serial and all 4 large parallel tasks; BiliNova gives 1 small (`2667a4b`) and 1 large serial (`f07e0d0`). BiliNova's history after the 07-26 checkpoint has few commits with tests that fail at their parent, and the rest need a GPU (`5dba678`) or are tests without a source change (`9e0dcdd`). `bilinova-audio-source-factory` is accepted on its factory contract tests only; its session refactor is checked by the regression suite alone, so its pass rate says less than the others'. Large parallel tasks are composites (D-19 `parts`) of independent historical fixes in different packages, on a common base that every part's diff applies to; `CHANGELOG.md` files are left out of every reference diff because they make parts conflict and are not part of a task | R0.0.1 |
+| D-23 | 2026-11-09 | realctx settings schema v3 (upstream `90b356c`): on load, a config older than v3 has its Context and History sections reset to new defaults (protect 24 turns, apply at 40% with no ceiling, history at 30%, emergency 80%, no size floors) and the cache lifetime is resolved per model, with an optional daily fetch from models.dev. Benchmark: realctx pinned to `90b356c` in `bench/pins.json` (the runner refuses agent runs on another commit unless `RSA_ALLOW_DRIFT=1`); the per-run config takes only endpoints and models from the user's config, sets `version: 3`, uses v3 defaults for Context and History, turns `cacheTtlAuto` off and sets a 5 m lifetime for the session model, so runs neither depend on the user's settings nor on the network. The pilot ran on `12f7cad` with the user's v2 settings (apply at 65%, protect 4 turns) and is not pooled with the baselines. Design rev 2.1 (§15, §15.1, §17.1) | R0.0.2 |
 
 ### 7.2 Open inputs (needed before or during P0)
 
@@ -448,3 +454,8 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Done: G0; R0.0.3 meter (+ U-10 workaround); R0.0.2 runner; R0.0.4 acceptance with regression lists (D-18, D-19); first task and first paid pilot run ([report](../reports/bench/pilot-2026-11-09.md)): accepted, $1.42, 7.5 min, 30 model calls, 95% cache hits.
 - Found: realctx's memory rewrites ran on the session model (opus) because `rewriteModel` is empty → D-20. realctx writes project-shared memories into `<tree>/.pi/realctx/`; the runner leaves them out of the diff. realtasks is not isolated per run (state under the agent dir).
 - Next: R0.0.1 task set (13 tasks, D-21), validated for free; one large run to price large tasks; then the baseline runs.
+
+### 2026-11-09 — v0.0 (task set)
+- Done: 13 tasks written (D-21 counts; sources D-22): small `pi-tui-wrap-boundary`, `pi-image-resize-format`, `pi-strip-ansi-private-csi`, `pi-mcp-login-local`, `pi-tool-search-coverage`, `bilinova-play-transport-types`; large serial `pi-self-update-command`, `pi-extension-changelog`, `bilinova-audio-source-factory`; large parallel `pi-par-orca-durable-trust` (k 3), `pi-par-shift-chord-pnpm` (k 3), `pi-par-osc133-npm-stale` (k 2), `pi-par-wsl-durable-ranking` (k 2).
+- Found: realctx moved to settings schema v3 upstream → D-23 (pin, explicit per-run settings), U-11, U-12, K-12, design rev 2.1.
+- Found: the BiliNova contract test reads `samples/dash-avio/audio.m4s`, which is untracked; `samples` is now linked into BiliNova trees (`bench/repos.json`).

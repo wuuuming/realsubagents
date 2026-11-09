@@ -1,6 +1,6 @@
 # realsubagents: Design Doc v1
 
-Nov 9, 2026 · @StackWu · rev 2: fixes for the five critical review issues (cost metric, escalation by observation, per-group worktrees and shared patches, lanes and scouts, shorter critical path)
+Nov 9, 2026 · @StackWu · rev 2: fixes for the five critical review issues (cost metric, escalation by observation, per-group worktrees and shared patches, lanes and scouts, shorter critical path) · rev 2.1: realctx settings v3 (prompt-cache rules §15, cost-model fit §15.1, two realctx changes §17.1; route D-23)
 
 ## 1. Goals
 
@@ -675,8 +675,8 @@ Expensive models sit in three places only: decomposing user requests, bootstrap 
 - System prompts are byte-identical for the life of a session (realctx snapshot).
 - State views and notifications are appended, never rewritten. Older `rsa_state_view` results are dropped by realctx's supersession rule, with no new mechanism.
 - Before the first escalation the orchestrator carries only `rsa_escalate`; other tools are added by a system-prompt patch, not a prompt rewrite (§7.2).
-- Worker sessions live long, but a provider cache lives only minutes, so a prefix stays warm only while the worker is busy; resuming an idle worker pays one cache write. Variants and lanes share the parent's prefix when forked.
-- Drops and compression apply when the cache is cold or usage crosses a threshold, as in realctx.
+- Worker sessions live long, but a provider cache lives 5 minutes by default (Anthropic, OpenAI), so a prefix stays warm only while the worker is busy; resuming an idle worker pays one cache write. Pi's `PI_CACHE_RETENTION=long` extends Anthropic's cache to 1 hour at a higher write price (2× base input instead of 1.25×). It is an environment variable, so it is set per process and each role can choose it (route DD-3). Whatever lifetime a process uses, its realctx must assume the same one (`context.cacheTtlByModel`); otherwise realctx treats a warm cache as cold and rewrites the prefix early, or holds drops back while the cache is already cold. Variants and lanes share the parent's prefix when forked.
+- Drops and compression apply when the cache is cold or usage crosses a threshold, as in realctx. These thresholds decide how large a prefix grows before relief, which is the r·g·n² term of §15.1. realctx settings schema v3 (2026-11-09) defaults: the last 24 turns are never dropped or compressed, queued drops apply at 40% of the safe input window with no token ceiling, history parts are prepared at 30%, emergency reclaim at 80%. realsubagents sets the Context and History settings per role instead of inheriting the user's global config, because a worker with a module-scoped job and the interactive orchestrator may want different values (tuned in v0.1; §17.1).
 
 **Budgets.** Every task and group has a budget in **USD**, metered per assistant message from Pi's `usage` and the model registry's prices, so every role is charged at its own model's price. The benchmark uses the same meter. Where a model must see a token figure, W = cost ÷ the strong model's cache-read price per token. Exceeding a budget blocks the task and raises a wake notification; the orchestrator decides whether to add budget or abandon. Nothing keeps spending silently.
 
@@ -699,7 +699,7 @@ with C\_overhead = o · (brief + plan + stubs + Reports + consult replies) + rev
 
 - **Where savings come from.** The quadratic term: splitting n turns into k lanes divides g·n²/2 by about k; module-scoped context and scouts make g\_w < g; cold restarts of one huge context disappear.
 - **Where costs come from.** k prefix writes w·P\_w, output-priced overhead, and scouts at cheap-model prices. Output is the most expensive token kind, so Reports, briefs and plans are kept short by template.
-- **Fitting.** From v0.0 traces: P, g, Δ and O per task class; g\_w and overhead per Report, brief and plan from v0.05 and v0.1; the cold-restart rate. Gate: predictions within ±15% of measured cost.
+- **Fitting.** From v0.0 traces: P, g, Δ and O per task class; g\_w and overhead per Report, brief and plan from v0.05 and v0.1; the cold-restart rate. Gate: predictions within ±15% of measured cost. g depends on realctx's version and Context/History settings, so a fit holds only for the version and settings it was measured with; the benchmark pins both and the model is refitted when either changes.
 - **Break-even.** Solve C\_rsa = C\_single for the projected task size; that is the default escalation threshold (§7.2), refitted as data accumulates.
 
 ## 16. Reliability and security
@@ -742,6 +742,8 @@ The changes are small; most turn a "session family" assumption into a setting.
 | realctx | Configurable capture-budget scope: `capture.budgetScope = family, session or group` | Today a whole family shares 6 captures per hour; several groups would starve each other |
 | realctx | Two kinds of subagent: long-lived **member** and disposable **helper**; members may extract historian facts | realctx §9.4 assumes subagents are disposable, but workers are where most knowledge appears; helpers serve as scouts (§7.5) |
 | realctx | Sessions in one group may search each other's dropped outputs; G0 and the orchestrator may search any group read-only | semif, historians and the orchestrator recall worker evidence by reference |
+| realctx | Per-process settings overlay for the Context and History sections (e.g. a `REALCTX_SETTINGS` file merged over `config.json`), with the shared memory store unchanged | Roles need different thresholds and cache lifetimes (§15). Today settings come only from `$REALCTX_HOME/config.json`, the same directory as the memory store, so a separate config means separate memories |
+| realctx | Derive the cache lifetime from `PI_CACHE_RETENTION` when no per-model override is set; expose the resolved lifetime (`cacheTtls.resolve`) in the library | A worker on long retention would otherwise be compressed after 5 idle minutes; the resume-or-fresh decision (DD-3) needs the lifetime realctx uses |
 | realctx | Three new judge question sets: completion, scope, merge risk | §14; judge client and policy layer unchanged |
 | realctx | Expose remember, recall and judge as a library, not only as tools | realsubagents calls them from code |
 | realtasks | Extract the exactly-once latch and delivery mapping into a reusable module | ReportBus reuses it |

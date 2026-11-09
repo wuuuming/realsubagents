@@ -8,7 +8,7 @@
  * - agent:     the measured run. A single Pi session (realctx + realtasks, D-14) gets prompt.md once
  *              and works until it settles; then acceptance.
  * - base:      no agent; acceptance must FAIL (the task is not already done).
- * - reference: no agent; the `source` commit's change is applied; acceptance must PASS.
+ * - reference: no agent; the historical change(s) (`source` or `parts`) are applied; acceptance must PASS.
  *              base + reference together validate a task without spending anything.
  *
  * Every run gets a fresh worktree at the task's base commit with the repository's tree setup
@@ -25,7 +25,7 @@ import { ledger } from "./ledger.ts";
 import { meter } from "./meter.ts";
 import { cargoFailures, compare, nodeTapFailures, readList, vitestFailures, type RegressionResult } from "./regression.ts";
 import { must, sh } from "./sh.ts";
-import { type LoadedTask, loadRepos, loadTask, type RepoDef } from "./task.ts";
+import { type LoadedTask, loadRepos, loadTask, partsOf, regressionChecks, type RepoDef } from "./task.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
 const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
@@ -41,6 +41,24 @@ const SEED = join(ROOT, "experiments", "tree-seeding", "seed-tree.mjs");
 const REALCTX_MODEL = process.env.RSA_REALCTX_MODEL ?? "anthropic/claude-haiku-5-5";
 /** Files the harness itself writes into the tree: the seed manifest and realctx's project-shared memories. */
 const DIFF_EXCLUDE = [".rsa-seed-manifest.json", ".pi/realctx"];
+/** D-23: extension commits the phase's runs must use (`RSA_ALLOW_DRIFT=1` to override). */
+const PINS: Record<string, string> = JSON.parse(readFileSync(join(ROOT, "bench", "pins.json"), "utf8"));
+
+/**
+ * D-20, D-23: the per-run realctx config. Only endpoints, keys and the like come from the user's config;
+ * Context and History use realctx's own (v3) defaults, except the historian model and the cache lifetime,
+ * which is fixed for the session model instead of fetched from models.dev.
+ */
+export function realctxRunConfig(user: Record<string, unknown>, sessionModel: string, realctxModel: string, retention = process.env.PI_CACHE_RETENTION): Record<string, unknown> {
+	const { context: _c, history: _h, ...rest } = user;
+	return {
+		...rest,
+		version: 3,
+		rewriteModel: realctxModel,
+		history: { model: realctxModel },
+		context: { cacheTtlAuto: false, cacheTtlByModel: { [sessionModel]: retention === "long" ? "1h" : "5m" } },
+	};
+}
 
 export type Mode = "agent" | "base" | "reference";
 
@@ -70,7 +88,7 @@ export interface RunResult {
 	status: "ok" | "cap" | "timeout" | "error";
 	error?: string;
 	accepted: boolean | null;
-	regression?: RegressionResult & { log: string };
+	regression?: RegressionResult;
 	costUsd?: number;
 	wallClockMs?: number;
 	modelCalls?: number;
@@ -127,9 +145,8 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 	const realctxConfig = join(AGENT_DIR, "realctx", "config.json");
 	// The user's realctx config (embedding / semif endpoints), with D-13's cheap model for realctx's own
 	// model calls: the historian and the memory edit/merge (`rewriteModel`, else the session model).
-	const cfg = existsSync(realctxConfig) ? JSON.parse(readFileSync(realctxConfig, "utf8")) : {};
-	cfg.rewriteModel = REALCTX_MODEL;
-	cfg.history = { ...cfg.history, model: REALCTX_MODEL };
+	const user = existsSync(realctxConfig) ? JSON.parse(readFileSync(realctxConfig, "utf8")) : {};
+	const cfg = realctxRunConfig(user, o.model, REALCTX_MODEL);
 	writeFileSync(join(realctxHome, "config.json"), JSON.stringify(cfg, null, 2));
 	const sidecar = join(runDir, "usage-sidecar.jsonl");
 	const sessionDir = join(runDir, "sessions");
@@ -195,29 +212,43 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 	if (res.status === "ok" && m.total.costUsd > o.capUsd) res.status = "cap";
 }
 
+/** Reset withheld paths to their base version, then apply each part's change to them. */
+async function addWithheldTests(task: LoadedTask, tree: string): Promise<void> {
+	for (const p of partsOf(task)) {
+		if (!p.withhold.length) continue;
+		for (const w of p.withhold) {
+			const atBase = await sh(`git cat-file -e ${task.base}:${q(w)}`, { cwd: tree });
+			if (atBase.code === 0) await must(`git checkout ${task.base} -- ${q(w)}`, tree);
+			else rmSync(join(tree, w), { recursive: true, force: true });
+		}
+		await must(`git diff --binary ${p.from} ${p.source} -- ${p.withhold.map(q).join(" ")} | git apply --3way --whitespace=nowarn`, tree);
+	}
+}
+
 async function acceptance(task: LoadedTask, tree: string, runDir: string, res: RunResult, writeBaseline = false): Promise<void> {
 	// Snapshot the agent's change before withheld files are added.
 	await sh("git add -A -N", { cwd: tree });
 	const excludes = DIFF_EXCLUDE.map((p) => `':(exclude)${p}'`).join(" ");
 	writeFileSync(join(runDir, "diff.patch"), (await sh(`git diff --binary -- . ${excludes}`, { cwd: tree, keep: 50_000_000 })).tail);
-	if (task.withhold?.length) {
-		await must(`git checkout ${task.source} -- ${task.withhold.map(q).join(" ")}`, tree);
-	}
+	await addWithheldTests(task, tree);
 	const t0 = Date.now();
 	const a = await sh(task.acceptance.command, { cwd: tree, timeoutSec: task.acceptance.timeoutSec ?? 1800 });
 	writeFileSync(join(runDir, "acceptance.log"), `$ ${task.acceptance.command}\nexit ${a.timedOut ? "timeout" : a.code} in ${a.ms} ms\n\n${a.tail}`);
 	res.accepted = a.code === 0 && !a.timedOut;
-	if (task.regression) {
-		const vitestJson = join(runDir, "vitest.json");
-		const r = await sh(task.regression.command, {
+	const checks = regressionChecks(task);
+	const results: RegressionResult[] = [];
+	for (const [i, check] of checks.entries()) {
+		const sfx = checks.length > 1 ? `-${i + 1}` : "";
+		const vitestJson = join(runDir, `vitest${sfx}.json`);
+		const r = await sh(check.command, {
 			cwd: tree,
-			timeoutSec: task.regression.timeoutSec ?? 3600,
+			timeoutSec: check.timeoutSec ?? 3600,
 			env: { ...process.env, RSA_VITEST_JSON: vitestJson },
 			keep: 5_000_000,
 		});
-		const log = join(runDir, "regression.log");
-		writeFileSync(log, r.tail);
-		const p = task.regression.parser;
+		const log = join(runDir, `regression${sfx}.log`);
+		writeFileSync(log, `$ ${check.command}\n\n${r.tail}`);
+		const p = check.parser;
 		const failures =
 			p === "cargo"
 				? cargoFailures(r.tail)
@@ -227,12 +258,21 @@ async function acceptance(task: LoadedTask, tree: string, runDir: string, res: R
 						? vitestFailures(readFileSync(vitestJson, "utf8"), tree)
 						: new Set(["<no vitest json>"]);
 		if (r.timedOut) failures.add("<timeout>");
-		const baselineFile = join(task.dir, task.regression.baselineFailures);
+		const baselineFile = join(task.dir, check.baselineFailures);
 		if (writeBaseline) {
-			const header = `# Failures of the reference solution (${task.source}) at ${new Date().toISOString().slice(0, 10)}; written by run.ts --mode reference --write-baseline\n`;
+			const sources = partsOf(task).map((x) => x.source).join(" + ");
+			const header = `# Failures of the reference solution (${sources}) at ${new Date().toISOString().slice(0, 10)}; written by run.ts --mode reference --write-baseline\n`;
 			writeFileSync(baselineFile, header + [...failures].sort().join("\n") + "\n");
 		}
-		res.regression = { ...compare(failures, readList(baselineFile)), log };
+		results.push(compare(failures, readList(baselineFile)));
+	}
+	if (checks.length) {
+		res.regression = {
+			failed: results.reduce((n, x) => n + x.failed, 0),
+			newFailures: results.flatMap((x) => x.newFailures),
+			fixed: results.flatMap((x) => x.fixed),
+			ok: results.every((x) => x.ok),
+		};
 		if (!res.regression.ok) res.accepted = false;
 	}
 	res.acceptanceMs = Date.now() - t0;
@@ -244,6 +284,9 @@ export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult>
 		const spent = ledger(o.runsRoot).totalUsd;
 		if (spent + o.capUsd > o.budgetUsd)
 			throw new Error(`phase budget: spent $${spent.toFixed(2)} + cap $${o.capUsd} > budget $${o.budgetUsd} (D-21); raise --budget-usd to override`);
+		const realctxHead = await gitHead(resolve(EXTENSIONS.realctx, "../../.."));
+		if (PINS.realctx && !realctxHead.startsWith(PINS.realctx) && !PINS.realctx.startsWith(realctxHead) && process.env.RSA_ALLOW_DRIFT !== "1")
+			throw new Error(`realctx is at ${realctxHead}, the phase pins ${PINS.realctx} (bench/pins.json, D-23); update realctx or set RSA_ALLOW_DRIFT=1`);
 	}
 	const repo = loadRepos()[task.repo];
 	if (!repo) throw new Error(`unknown repo ${task.repo} (bench/repos.json)`);
@@ -282,10 +325,14 @@ export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult>
 		await prepareTree(task, repo, tree, log);
 		res.setupMs = Date.now() - t0;
 		if (o.mode === "reference") {
-			if (!task.source) throw new Error("reference mode needs task.source");
-			// Apply the historical change except the withheld paths (acceptance adds those itself).
-			const excludes = (task.withhold ?? []).map((p) => `':(exclude)${p}'`).join(" ");
-			await must(`git diff --binary ${task.base} ${task.source} -- . ${excludes} | git apply --index --whitespace=nowarn`, tree);
+			const parts = partsOf(task);
+			if (!parts.length) throw new Error("reference mode needs task.source or task.parts");
+			// Apply each historical change except its withheld paths (acceptance adds those itself).
+			for (const p of parts) {
+				// Changelog entries are not part of a task and make composite parts conflict.
+				const excludes = [...p.withhold, "**/CHANGELOG.md"].map((w) => `':(exclude)${w}'`).join(" ");
+				await must(`git diff --binary ${p.from} ${p.source} -- . ${excludes} | git apply --3way --whitespace=nowarn`, tree);
+			}
 		} else if (o.mode === "agent") {
 			await agentRun(task, o, runDir, tree, res);
 		}
