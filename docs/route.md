@@ -84,8 +84,8 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 
 | Phase | Objective | Depends on | Gate | Status |
 | --- | --- | --- | --- | --- |
-| P0 | Inputs decided, repository scaffolded, extension loads in Pi | — | G0 | ⬜ |
-| v0.0 | Baseline numbers and a fitted cost model | P0 | G0.0 | ⬜ |
+| P0 | Inputs decided, repository scaffolded, extension loads in Pi | — | G0 | ✅ [G0](../reports/gates/G0.md) |
+| v0.0 | Baseline numbers and a fitted cost model | P0 | G0.0 | 🟨 |
 | v0.05 | Prove the main bet by hand before building infrastructure | v0.0 | G0.05 (go / no-go) | ⬜ |
 | v0.1 | One group, in-process, request → accepted; small tasks cheap | v0.05 = GO | G0.1 | ⬜ |
 | v0.2 | Several groups in parallel; hits the large-parallel targets | v0.1 | G0.2 | ⬜ |
@@ -118,9 +118,9 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | --- | --- | --- | --- | --- |
 | R0.0.1 | Task set: ≥ 10 small, ≥ 6 large serial, ≥ 6 large parallel (≥ 2 with k ≥ 3), over 2–3 repositories, each frozen at a commit with an acceptance command | `bench/tasks/<id>.yaml` (repo, commit, prompt, acceptance, label, expected groups) | ⬜ | |
 | R0.0.2 | Runner: headless baseline runs (`pi --mode json` or RPC) with realctx on, in a fresh worktree at the frozen commit plus the repository's tree setup (D-15), isolated per D-14, N = 3 per task, per-run spend cap | `bench/run.ts` | ⬜ | |
-| R0.0.3 | Meter: read the session file: assistant-message `usage` **and** `usage` entries of kind `cache_warm`. Cost per role, four raw token counts, wall-clock, turns, compactions | `bench/meter.ts`, one JSON per run | ⬜ | |
+| R0.0.3 | Meter: read the session file: assistant-message `usage` **and** `usage` entries of kind `cache_warm`. Cost per role, four raw token counts, wall-clock, turns, compactions | `bench/meter.ts`, one JSON per run | ✅ | `bench/meter.ts` (assistant `usage`, `usage` entries, compaction `usage`, extension calls via `rsa-usage` entries + sidecar; per role / model, H-2 cache hit rate, turns, compactions); `tests/meter.test.ts` 4/4; `bench/usage-probe.ts` against Pi 1.5.0 → `USAGE PROBE OK` |
 | R0.0.4 | Acceptance check after each run; failed runs reported separately | Success rate per task (M-6) | ⬜ | |
-| R0.0.5 | Trace extraction per turn: context length, new tokens Δ, output O, cold restarts | `bench/traces/` | ⬜ | |
+| R0.0.5 | Trace extraction per turn: context length, new tokens Δ, output O, cold restarts | `bench/traces/` | 🟨 | Extractor done in `bench/meter.ts --trace` (ctx, Δ, O, cold restarts, after-compaction per call); traces land in `bench/traces/` once runs exist |
 | R0.0.6 | Cost model: implementation and fitting (P, g, Δ, O per class; cold-restart rate); held-out error | `src/costmodel.ts`, `bench/fit.ts` | ⬜ | |
 | R0.0.7 | Benchmark report #1 (baseline) | `reports/bench/001-baseline.md` | ⬜ | |
 
@@ -251,7 +251,7 @@ realctx (WtzLAS) and realtasks (st0nie) are third-party packages, installed loca
 | U-7 | realtasks: reusable spawn and re-adoption | v0.2 | Port `src/proc.ts` logic into the adapter | ⬜ |
 | U-8 | realtasks: cross-session task logs | v0.2 | Not needed: review runs tests itself | ⬜ |
 | U-9 | realtasks: shared build queue | v0.2 | Local semaphore in realsubagents | ⬜ |
-| U-10 | Pi: an extension API to record model usage in the session (`SessionManager.appendUsage` exists but extensions only get `ReadonlySessionManager`); realctx: record its historian and rewrite calls with it. Today their cost is missing from the session file, so the meter (R0.0.3) under-counts realctx's background spend | v0.0 | Benchmark-only extension that wraps `ModelRegistry.prototype.complete` / `streamSimple` and appends usage to a sidecar JSONL per run, which the meter adds | ⬜ |
+| U-10 | Pi: an extension API to record model usage in the session (`SessionManager.appendUsage` exists but extensions only get `ReadonlySessionManager`); realctx: record its historian and rewrite calls with it. Today their cost is missing from the session file, so the meter (R0.0.3) under-counts realctx's background spend | v0.0 | Benchmark-only extension that wraps `ModelRegistry.prototype.complete` / `streamSimple` and appends usage to a sidecar JSONL per run, which the meter adds | 🟨 workaround: `extensions/rsa-bench-usage` |
 
 ### T-W Windows and platform
 
