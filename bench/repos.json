@@ -1,0 +1,16 @@
+{
+	"bilinova": {
+		"base": "D:/rsa-bench/repos/bilinova",
+		"setup": { "from": "D:/Projects/BiliNova", "link": ["native", "native-audio"] },
+		"seed": "cargo",
+		"prepare": ["cargo test --workspace --no-run --quiet"],
+		"prepareTimeoutSec": 1800
+	},
+	"pi": {
+		"base": "D:/rsa-bench/repos/pi",
+		"setup": { "from": "D:/rsa-bench/repos/pi", "copy": ["packages/ai/src/providers/data"] },
+		"seed": "npm",
+		"prepare": ["git diff --quiet $(git -C D:/rsa-bench/repos/pi rev-parse HEAD) HEAD -- package-lock.json || npm ci --ignore-scripts --no-audit --no-fund", "npm run build:offline"],
+		"prepareTimeoutSec": 900
+	}
+}

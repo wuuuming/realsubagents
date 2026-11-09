@@ -116,10 +116,10 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| R0.0.1 | Task set: ≥ 10 small, ≥ 6 large serial, ≥ 6 large parallel (≥ 2 with k ≥ 3), over 2–3 repositories, each frozen at a commit with an acceptance command | `bench/tasks/<id>.yaml` (repo, commit, prompt, acceptance, label, expected groups) | ⬜ | |
-| R0.0.2 | Runner: headless baseline runs (`pi --mode json` or RPC) with realctx on, in a fresh worktree at the frozen commit plus the repository's tree setup (D-15), isolated per D-14, N = 3 per task, per-run spend cap | `bench/run.ts` | ⬜ | |
+| R0.0.1 | Task set: ≥ 10 small, ≥ 6 large serial, ≥ 6 large parallel (≥ 2 with k ≥ 3), over 2–3 repositories, each frozen at a commit with an acceptance command | `bench/tasks/<id>/task.json` + `prompt.md` (D-19) | 🟨 | 1 of ≥ 22: `pi-tui-wrap-boundary` (small), validated base ✗ / reference ✓ |
+| R0.0.2 | Runner: headless baseline runs (`pi --mode json` or RPC) with realctx on, in a fresh worktree at the frozen commit plus the repository's tree setup (D-15), isolated per D-14, N = 3 per task, per-run spend cap | `bench/run.ts` | ✅ | `bench/run.ts` (+ `task.ts`, `sh.ts`, `repos.json`); modes agent / base / reference; pilot run accepted, [report](../reports/bench/pilot-2026-11-09.md) |
 | R0.0.3 | Meter: read the session file: assistant-message `usage` **and** `usage` entries of kind `cache_warm`. Cost per role, four raw token counts, wall-clock, turns, compactions | `bench/meter.ts`, one JSON per run | ✅ | `bench/meter.ts` (assistant `usage`, `usage` entries, compaction `usage`, extension calls via `rsa-usage` entries + sidecar; per role / model, H-2 cache hit rate, turns, compactions); `tests/meter.test.ts` 4/4; `bench/usage-probe.ts` against Pi 1.5.0 → `USAGE PROBE OK` |
-| R0.0.4 | Acceptance check after each run; failed runs reported separately | Success rate per task (M-6) | ⬜ | |
+| R0.0.4 | Acceptance check after each run; failed runs reported separately | Success rate per task (M-6) | ✅ | `bench/regression.ts`: named tests + full suite vs. baseline failure list (cargo, vitest JSON, node TAP); `tests/regression.test.ts` |
 | R0.0.5 | Trace extraction per turn: context length, new tokens Δ, output O, cold restarts | `bench/traces/` | 🟨 | Extractor done in `bench/meter.ts --trace` (ctx, Δ, O, cold restarts, after-compaction per call); traces land in `bench/traces/` once runs exist |
 | R0.0.6 | Cost model: implementation and fitting (P, g, Δ, O per class; cold-restart rate); held-out error | `src/costmodel.ts`, `bench/fit.ts` | ⬜ | |
 | R0.0.7 | Benchmark report #1 (baseline) | `reports/bench/001-baseline.md` | ⬜ | |
@@ -346,6 +346,8 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-17 | 2026-11-09 | Tree population (design doc §13.1): Tier A copy-on-write clone where the volume supports it; otherwise Tier B: worktree + linked prerequisites + hard-linked immutable dependencies and third-party build outputs (per-toolchain adapter, small files copied) + own build outputs; trees pooled by concurrent writers, recycled after merge, capped by a disk budget. Sparse-checkout dropped as the default (source is 1–7% of a tree) | W-2, W-7, W-8, K-4 |
 | D-18 | 2026-11-09 | Benchmark acceptance never uses a repository's full test suite as is: at the frozen commits BiliNova has 4 failing tests (of 1,221) and pi on Windows ~1,040 failing tests in 8 of 12 packages. Acceptance = the task's named tests pass, plus no test outside the baseline failure list fails | R0.0.1, R0.0.4 |
 | D-16 | 2026-11-09 | Defaults accepted: adapters plus upstream PRs (Q-4); plain worktrees on NTFS, no Dev Drive (Q-6); the v0.05 relay is a script (Q-7) | Q-4, Q-6, Q-7 |
+| D-19 | 2026-11-09 | Task format and validation: a task is reconstructed from a historical commit (`source`) at its parent (`base`); the commit's tests are withheld and checked out only at acceptance; `prompt.md` states the problem as the issue did, not the fix. A task enters the set only if `--mode base` is rejected and `--mode reference` (the historical change) is accepted; the reference run writes the regression baseline list | R0.0.1, R0.0.4 |
+| D-20 | 2026-11-09 | realctx's own model calls in benchmark runs (historian `history.model` and memory edit/merge `rewriteModel`, which otherwise fall back to the session model) use `anthropic/claude-haiku-5-5`, per D-13; the runner sets both in the per-run config. The user's `history.model` (`openai/gpt-6-luna`) is not used in benchmarks | D-13; pilot found rewrites on opus |
 
 ### 7.2 Open inputs (needed before or during P0)
 
@@ -440,3 +442,8 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Baselines at the frozen commits: BiliNova builds only with its untracked SDKs linked (D-15) and has 4 failing tests; pi on Windows has ~1,040 failing tests in 8 of 12 packages → acceptance against a baseline failure list (D-18).
 - Found: realctx's historian and rewrite calls are not recorded in the session file, so the meter would under-count them (U-10).
 - Next: G0 check, then v0.0: R0.0.3 meter (with the U-10 workaround), R0.0.2 runner, R0.0.1 task set.
+
+### 2026-11-09 — v0.0 (runner)
+- Done: G0; R0.0.3 meter (+ U-10 workaround); R0.0.2 runner; R0.0.4 acceptance with regression lists (D-18, D-19); first task and first paid pilot run ([report](../reports/bench/pilot-2026-11-09.md)): accepted, $1.42, 7.5 min, 30 model calls, 95% cache hits.
+- Found: realctx's memory rewrites ran on the session model (opus) because `rewriteModel` is empty → D-20. realctx writes project-shared memories into `<tree>/.pi/realctx/`; the runner leaves them out of the diff. realtasks is not isolated per run (state under the agent dir).
+- Next: R0.0.1 task set (≥ 22 tasks over pi and BiliNova), then N = 3 baseline runs per task.
