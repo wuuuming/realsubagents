@@ -21,6 +21,32 @@ export function findBash(): string {
 	return bashPath;
 }
 
+/**
+ * Processes left behind by an agent run: descendants of `rootPid` (listed while it is still alive) and
+ * any process whose command line or executable mentions `dir`. Pi's background tasks outlive Pi on
+ * Windows (killing a parent does not kill its children), and would load the CPU during acceptance and
+ * the next runs. Returns the killed PIDs.
+ */
+export function killLeftovers(rootPid: number | undefined, dir: string): number[] {
+	if (process.platform !== "win32") {
+		if (rootPid) killTree(rootPid);
+		return [];
+	}
+	const back = dir.replace(/\//g, "\\").replace(/'/g, "''");
+	const fwd = back.replace(/\\/g, "/");
+	const ps = `
+$all = Get-CimInstance Win32_Process | Select-Object ProcessId,ParentProcessId,CommandLine,ExecutablePath
+$kill = New-Object System.Collections.Generic.HashSet[int]
+$root = ${rootPid ?? -1}
+$frontier = @($root)
+while ($frontier.Count) { $next = @(); foreach ($p in $all) { if ($frontier -contains $p.ParentProcessId -and $kill.Add([int]$p.ProcessId)) { $next += $p.ProcessId } }; $frontier = $next }
+foreach ($p in $all) { $c = "$($p.CommandLine)|$($p.ExecutablePath)"; if ($c.Contains('${back}') -or $c.Contains('${fwd}')) { [void]$kill.Add([int]$p.ProcessId) } }
+[void]$kill.Remove($PID); [void]$kill.Remove(${process.pid}); [void]$kill.Remove($root)
+foreach ($k in $kill) { Stop-Process -Id $k -Force -ErrorAction SilentlyContinue; $k }`;
+	const r = spawnSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", ps], { encoding: "utf8", windowsHide: true, timeout: 60_000 });
+	return (r.stdout ?? "").split(/\s+/).filter(Boolean).map(Number).filter((n) => Number.isFinite(n));
+}
+
 function killTree(pid: number): void {
 	if (process.platform === "win32") spawnSync("taskkill", ["/T", "/F", "/PID", String(pid)], { windowsHide: true });
 	else {

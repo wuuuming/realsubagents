@@ -24,7 +24,7 @@ import { RpcClient, type RpcRecord } from "../src/rpc.ts";
 import { ledger } from "./ledger.ts";
 import { meter } from "./meter.ts";
 import { cargoFailures, compare, nodeTapFailures, readList, vitestFailures, type RegressionResult } from "./regression.ts";
-import { must, sh } from "./sh.ts";
+import { killLeftovers, must, sh } from "./sh.ts";
 import { type LoadedTask, loadRepos, loadTask, partsOf, regressionChecks, type RepoDef } from "./task.ts";
 
 const ROOT = resolve(import.meta.dirname, "..");
@@ -97,6 +97,8 @@ export interface RunResult {
 	setupMs: number;
 	acceptanceMs?: number;
 	baseIntact?: boolean;
+	/** Processes the agent left running (background tasks, test servers), killed before acceptance. */
+	leftoverProcesses?: number;
 	/** Set by `--rescore`: the verdict before the harness fix. */
 	rescored?: { at: string; harness: string; previous: Pick<RunResult, "status" | "accepted" | "regression" | "error"> };
 	versions: Record<string, string>;
@@ -197,7 +199,11 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 		}
 	} finally {
 		clearTimeout(wallTimer);
+		// Descendants first, while Pi is alive (their parent link is lost once it exits), then Pi itself.
+		const early = killLeftovers(client.child.pid, runDir);
 		await client.close(10_000).catch(() => {});
+		const late = killLeftovers(undefined, runDir);
+		res.leftoverProcesses = early.length + late.length;
 		writeFileSync(join(runDir, "pi-stderr.log"), stderr);
 	}
 	res.status = stopReason ?? "ok";
