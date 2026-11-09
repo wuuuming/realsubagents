@@ -1,0 +1,8 @@
+node_modules/
+.pi/tasks/
+*.sqlite
+*.sqlite-*
+.DS_Store
+# benchmark raw runs and traces are large; reports are committed
+bench/runs/
+bench/traces/
