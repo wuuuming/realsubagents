@@ -466,4 +466,6 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Next: R0.0.6 / G0.0 runs. N per label and the $100 budget follow D-21; check spend with `node bench/ledger.ts`.
 - Done: user's realctx settings restored after their v3 update. Their historian `openai/gpt-6-luna` failed because their ChatGPT subscription had hit its usage limit; `history.model` is now empty at the user's request.
 - Decided: D-24 (realctx's own calls in benchmark runs use the session model; supersedes D-20). The pilot run is renamed `pilot-haiku-1`; its $1.42 still counts toward the budget, but it is not baseline data.
-- Next: first large run (`pi-self-update-command`, cap $10) to re-plan run counts under D-21.
+- Done: first large run (`pi-self-update-command`): $1.90 (main $1.68, realctx on the session model $0.22, about 12%), 6.2 min, 58 calls, no cold restarts. Not accepted, but the task was at fault: the prompt said "warn" without naming stdout, the hidden test reads `console.log`, and the agent printed to stderr. Prompt fixed; the run is kept as `invalid-prompt-1` (cost data only).
+- Re-plan (D-21 counts kept): small ~$1.6 × 18, large serial ~$2.2 × 6, large parallel ~$4 × 8 (estimate) ≈ $74, plus $3.32 spent ≈ $77 of $100.
+- Started: `bench/batch.sh` runs rounds over all tasks, one run at a time, and can resume; caps are $5 small and $8 large.

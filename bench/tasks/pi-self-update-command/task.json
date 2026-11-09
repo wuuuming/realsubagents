@@ -21,5 +21,5 @@
 		"baselineFailures": "baseline-failures.txt",
 		"timeoutSec": 1800
 	},
-	"notes": "pi#11629. One package, a chain of layers: settings schema -> config -> package-manager CLI -> docs (10 files, +299). Serial: each layer needs the previous one. Acceptance names the commit's new tests (-t): other tests in the same file fail on Windows before and after the change."
+	"notes": "pi#11629. One package, a chain of layers: settings schema -> config -> package-manager CLI -> docs (10 files, +299). Serial: each layer needs the previous one. Acceptance names the commit's new tests (-t): other tests in the same file fail on Windows before and after the change. Prompt fixed 2026-11-09 after the first agent run: it did not say the version warning goes to stdout, but the hidden test reads console.log; the agent printed it to stderr. That run is kept as `invalid-prompt-1` (cost data only)."
 }

@@ -5,7 +5,7 @@ Behaviour (packages/coding-agent):
 - The configured command replaces Pi's own update logic for every install method, including installer-managed installs. `pi update` still checks for a newer release first: the command runs only when a newer release exists (or with `--force`), after the release note is printed. Otherwise Pi prints `pi is already up to date (v<version>)` as today.
 - Placeholders, filled in every argument from the release being installed: `{packageName}`, `{version}`, `{installSpec}` (= `<packageName>@<version>`). Unknown placeholders stay as they are.
 - If the command exits non-zero, print an error containing `<command line> exited with code <n>` and set exit code 1.
-- Exit code 0 does not prove an update. Report `Updated pi from <old> to <new>` when Pi's own `package.json` now shows the new version (in-place updates) or `pi --version` from PATH reports it (wrappers that install each version into a new directory). Otherwise warn: ``Ran <command line>, but `pi --version` reports <old>, not <new>.``
+- Exit code 0 does not prove an update. Report `Updated pi from <old> to <new>` when Pi's own `package.json` now shows the new version (in-place updates) or `pi --version` from PATH reports it (wrappers that install each version into a new directory). Otherwise print this warning on stdout, like the other `pi update` progress messages: ``Ran <command line>, but `pi --version` reports <old>, not <new>.``
 - The "cannot self-update this installation" message mentions the environment variable and the setting.
 
 Interface the tests use, in `src/config.ts`:
