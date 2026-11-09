@@ -19,6 +19,12 @@ test("per-run realctx config: v3, user's Context/History dropped, endpoints kept
 	assert.deepEqual(c.context, { cacheTtlAuto: false, cacheTtlByModel: { "anthropic/claude-opus-5-5": "5m" } });
 });
 
+test("empty realctx model leaves both fields empty: realctx falls back to the session model (D-24)", () => {
+	const c = realctxRunConfig(user, "anthropic/claude-opus-5-5", "", undefined);
+	assert.equal(c.rewriteModel, "");
+	assert.deepEqual(c.history, { model: "" });
+});
+
 test("cache lifetime follows PI_CACHE_RETENTION=long", () => {
 	const c = realctxRunConfig(user, "anthropic/claude-opus-5-5", "m", "long");
 	assert.deepEqual((c.context as { cacheTtlByModel: object }).cacheTtlByModel, { "anthropic/claude-opus-5-5": "1h" });

@@ -38,7 +38,8 @@ const EXTENSIONS = {
 };
 const SEED = join(ROOT, "experiments", "tree-seeding", "seed-tree.mjs");
 /** D-13: cheap model for realctx's historian and memory rewrites. */
-const REALCTX_MODEL = process.env.RSA_REALCTX_MODEL ?? "anthropic/claude-haiku-5-5";
+/** D-24: empty = realctx's own calls (memory edits, history) use the session model, as in the user's setup. */
+const REALCTX_MODEL = process.env.RSA_REALCTX_MODEL ?? "";
 /** Files the harness itself writes into the tree: the seed manifest and realctx's project-shared memories. */
 const DIFF_EXCLUDE = [".rsa-seed-manifest.json", ".pi/realctx"];
 /** D-23: extension commits the phase's runs must use (`RSA_ALLOW_DRIFT=1` to override). */
