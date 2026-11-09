@@ -592,10 +592,28 @@ A shared working tree breaks parallel work. Every build compiles other groups' h
 
 ### 13.1 Making trees cheap
 
-- **Copy-on-write population.** btrfs and XFS reflinks on Linux, APFS clones on macOS, and on Windows a Dev Drive (ReFS), where Windows 11 24H2 `CopyFile` uses block cloning. SandboxManager reports in the `/rsa` panel which method is in use.
-- **Fallback.** A plain `git worktree`. For very large repositories, sparse-checkout limited to the group's paths plus their dependency closure from the project map.
-- **Shared build caches, separate outputs.** pnpm store (hard links) for Node; `sccache` for Rust and C/C++; Bazel `--disk_cache`; Gradle build cache. Each tree has its own build output, so installing dependencies in a new tree costs links, not downloads.
+A tree's disk cost is almost never source. Measured on the benchmark repositories (route W-2): source is 40–90 MB, but BiliNova's `target/` is 7.0 GB and pi's `node_modules` 474 MB. So the rule is: **share what is immutable, copy only what a group writes, and keep as few trees as there are concurrent writers.** SandboxManager picks a population method per volume, once, by probing it, and reports the method and the disk in use in the `/rsa` panel.
+
+**Tier A, copy-on-write volume.** btrfs and XFS reflinks on Linux, APFS clones on macOS, ReFS or a Dev Drive on Windows (Windows 11 24H2 `CopyFile` uses block cloning). The new tree is a clone of a warm base tree, build outputs and dependencies included: near-zero space and an incremental first build. Probe: clone a 1 MB file and compare free space.
+
+**Tier B, any file system, the default.** No admin rights and no special file system, only git and same-volume hard links (NTFS, ext4, APFS, …):
+
+| Part of a tree | Mutable? | How it is provided | Cost per tree |
+| --- | --- | --- | --- |
+| History | No | `git worktree`: one object store | 0 |
+| Tracked source | Yes | Normal checkout. No sparse-checkout by default: it saves little (source is small) and breaks workspace builds | Source size |
+| Untracked prerequisites (SDKs, generated files) | No | Tree setup: a junction or symlink to the user's tree (below) | 0 |
+| Dependencies | No | Toolchains with a global store already share: Cargo (`~/.cargo`), pnpm, uv, Go, Gradle. npm and yarn classic: hard-link the base tree's `node_modules` file by file, skipping dot-directories other than `.bin` (tool caches such as `.vite` are written in place), then re-create the workspace links so they point into the new tree; `npm ci` when the lockfile differs from the base | Directory entries only (pi: 4 MB instead of 474 MB, 8 s instead of 64 s) |
+| Third-party build outputs | No, once built | Seeded by hard links from the base tree's build directory, for toolchains whose adapter declares this safe: units keyed by a content hash that does not include the tree's path (Cargo's third-party crates). A seeded file is never written in place; the adapter's check is that the base's files are byte-identical after a build in the new tree | 0 |
+| The repository's own build outputs | Yes | Built in the tree. Adapter options shrink them: Cargo builds workspace members of group trees with `debug = "line-tables-only"` (members only, so third-party hashes still match) | The real cost (BiliNova: 3.3 GB instead of 7.0 GB) |
+
+A toolchain without an adapter gets a plain worktree and its own full build: correct, only bigger. Adapters are per toolchain, in code, and listed in `config.json`; v1 ships Cargo and npm, the benchmark's toolchains. Compiler caches (`sccache`, Bazel `--disk_cache`, Gradle build cache) save build time, not space, and are configured where present.
+
+**Number of trees.** Trees are a pool, sized by the number of groups writing at once, not by the number of groups. Read-only groups (scouts, reviewers reading a commit) get no tree. When a group's work has merged, its tree is reset to the next branch instead of deleted, which keeps its build warm. A disk budget in `config.json` (default: 25% of the volume's free space at bootstrap) caps the pool; the least recently used idle tree is evicted first, and a new tree that would exceed the budget waits in the queue like a build.
+
+Not used: one build directory shared by several trees. Cargo locks it per build, so parallel groups would build one at a time, and uplifted binaries with the same name overwrite each other.
 - **Build queue.** Heavy builds and test runs go through the realtasks build queue; the cap defaults to the number of cores ÷ 4, at least 2. Each group builds its own tree, so the cap protects CPU and memory, not correctness.
+- **Tree setup.** A fresh tree has only tracked files, but builds often need untracked prerequisites (native SDKs, generated files, `.env`). Per project, `config.json` lists a setup step run once per new tree: directories to link from the user's tree (a junction on Windows, a symlink elsewhere; read-only by convention), small generated files to copy, and commands to run. Build commands that fetch from the network get an offline variant where the project has one, so builds stay reproducible. Bootstrap proposes the list by comparing a clean build of a fresh tree with the user's tree.
 - **Ports.** Dev servers and similar get a port range per group.
 - **git.** Each worktree has its own index. Workers never commit, rebase or push; SandboxManager and MergeQueue do, in code.
 

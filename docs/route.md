@@ -103,10 +103,10 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| R0.1 | Answer the open inputs Q-1 … Q-7 (§7.2) | Decisions D-n recorded | ⬜ | |
+| R0.1 | Answer the open inputs Q-1 … Q-7 (§7.2) | Decisions D-n recorded | ✅ | Q-1 … Q-7 answered 2026-11-09; D-9, D-12 … D-16 |
 | R0.2 | Scaffold the repository: `git init`; TypeScript Pi package (`package.json` with `pi.extensions`, peer dependency `@earendil-works/pi-coding-agent` 1.5.0, `tsconfig`, `node --test`); folders `extensions/realsubagents/`, `src/`, `bench/`, `prompts/`, `reports/`, `docs/` (move the design doc and this route into `docs/`) | Repository builds, typecheck passes | ✅ | `86d78c8`; `npm run typecheck`, `npm test` 1/1 |
 | R0.3 | Dev loop: load the extension with `pi -e ./extensions/realsubagents/index.ts`; a no-op `/rsa` command responds | Smoke test | ✅ | `86d78c8`; `npm run smoke` → `SMOKE OK: pi 1.5.0 (managed)` |
-| R0.4 | Windows checks (T-W): Dev Drive available? `git worktree add` time and disk use on the benchmark repositories; Git Bash on PATH for child processes | W-1 … W-4 filled in | 🟨 | W-1, W-3 done; W-2, W-4 measured on a proxy repository, to be redone on the Q-1 repositories |
+| R0.4 | Windows checks (T-W): Dev Drive available? `git worktree add` time and disk use on the benchmark repositories; Git Bash on PATH for child processes | W-1 … W-4 filled in | ✅ | W-1 … W-4 done; tree population measured (W-7, W-8) → D-17 |
 
 **G0:** the repository builds and typechecks, the extension loads in Pi, and Q-1 … Q-7 are decided.
 
@@ -117,7 +117,7 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
 | R0.0.1 | Task set: ≥ 10 small, ≥ 6 large serial, ≥ 6 large parallel (≥ 2 with k ≥ 3), over 2–3 repositories, each frozen at a commit with an acceptance command | `bench/tasks/<id>.yaml` (repo, commit, prompt, acceptance, label, expected groups) | ⬜ | |
-| R0.0.2 | Runner: headless baseline runs (`pi --mode json` or RPC) with realctx on, in a fresh worktree at the frozen commit, N = 3 per task, per-run spend cap | `bench/run.ts` | ⬜ | |
+| R0.0.2 | Runner: headless baseline runs (`pi --mode json` or RPC) with realctx on, in a fresh worktree at the frozen commit plus the repository's tree setup (D-15), isolated per D-14, N = 3 per task, per-run spend cap | `bench/run.ts` | ⬜ | |
 | R0.0.3 | Meter: read the session file: assistant-message `usage` **and** `usage` entries of kind `cache_warm`. Cost per role, four raw token counts, wall-clock, turns, compactions | `bench/meter.ts`, one JSON per run | ⬜ | |
 | R0.0.4 | Acceptance check after each run; failed runs reported separately | Success rate per task (M-6) | ⬜ | |
 | R0.0.5 | Trace extraction per turn: context length, new tokens Δ, output O, cold restarts | `bench/traces/` | ⬜ | |
@@ -251,15 +251,19 @@ realctx (WtzLAS) and realtasks (st0nie) are third-party packages, installed loca
 | U-7 | realtasks: reusable spawn and re-adoption | v0.2 | Port `src/proc.ts` logic into the adapter | ⬜ |
 | U-8 | realtasks: cross-session task logs | v0.2 | Not needed: review runs tests itself | ⬜ |
 | U-9 | realtasks: shared build queue | v0.2 | Local semaphore in realsubagents | ⬜ |
+| U-10 | Pi: an extension API to record model usage in the session (`SessionManager.appendUsage` exists but extensions only get `ReadonlySessionManager`); realctx: record its historian and rewrite calls with it. Today their cost is missing from the session file, so the meter (R0.0.3) under-counts realctx's background spend | v0.0 | Benchmark-only extension that wraps `ModelRegistry.prototype.complete` / `streamSimple` and appends usage to a sidecar JSONL per run, which the meter adds | ⬜ |
 
 ### T-W Windows and platform
 
 | ID | Item | Phase | Status |
 | --- | --- | --- | --- |
 | W-1 | Dev Drive (ReFS) available for worktrees? Block cloning works? **2026-11-09:** none; C: and D: are NTFS. Windows build 26200 supports Dev Drive; creating one needs admin (Q-6). Until then, plain worktrees | P0 | ✅ |
-| W-2 | `git worktree add` time and disk use on the benchmark repositories. **2026-11-09 proxy** (BiliNova, 1,860 files, NTFS, D:): full worktree 2.1 s and 105 MB per tree (3 runs, ±0.04 s); sparse, one top directory: 0.45 s. Acceptable for k ≤ 5 at task boundaries; build outputs per tree are the real disk cost. Redo on the Q-1 repositories | P0 | 🟨 |
+| W-2 | `git worktree add` time and disk use on the benchmark repositories. **2026-11-09:** BiliNova 2.3 s (1,860 files; source 90 MB), pi 2.3 s (2,949 files; source 41 MB), NTFS, D:. Source is 1–7% of a built tree; the cost is build outputs (BiliNova `target/` 7.0 GB) and dependencies (pi `node_modules` 474 MB) → D-17 | P0 | ✅ |
 | W-3 | Git Bash for child `pi` processes. **2026-11-09:** Pi resolves `%ProgramFiles%\Git\bin\bash.exe` itself (docs/windows.md), and realtasks' bash uses Pi's `getShellConfig()`. Child processes are started as `node <cli.js>` (`src/pi-cli.ts`), not through the `pi` launcher | P0 | ✅ |
-| W-4 | Shared build caches. **2026-11-09:** present: cargo, dotnet, uv, npm; absent: pnpm, sccache, Bazel, Gradle, Go. Which caches to configure depends on Q-1 | P0 / v0.2 | 🟨 |
+| W-4 | Shared build caches. **2026-11-09:** present: cargo, dotnet, uv, npm; absent: pnpm, sccache, Bazel, Gradle, Go. The benchmark repositories need Cargo (registry already global) and npm (no store: covered by W-8) | P0 / v0.2 | ✅ |
+| W-7 | Tier B seeding for Cargo (`experiments/tree-seeding/run-cargo.sh`). **2026-11-09, BiliNova:** seeding 2.4 s (734 files / 2.7 GB linked, files < 64 KB copied); first build compiles only the 11 workspace crates (31 s); base unchanged (0 of 734 linked files). `target/` per tree 4.3 GB (naive 7.0 GB); with `profile.dev.package.<member>.debug="line-tables-only"` for workspace members only: 3.3 GB, 25 s, tests identical to the base (1,202 passed, 4 baseline failures). A global debug setting would change third-party hashes and lose the reuse. Quirk: BiliNova's `build.rs` watches `.git/commondir`, which exists only in worktrees, so the user's tree rebuilds 2 crates on every build, seeding or not | P0 | ✅ |
+| W-8 | Tier B seeding for npm workspaces (`experiments/tree-seeding/run-npm.sh`). **2026-11-09, pi:** seeding 8 s (`npm ci`: 64 s), `node_modules` 4.1 MB per tree (naive 474 MB), 16 workspace links re-pointed; offline build 14 s; `agent` 94/94 and `ai` identical to the base (30 baseline failures); base unchanged (0 of 20,756). Found: vitest writes `node_modules/.vite/**/results.json` in place, so dot-directories in `node_modules` (except `.bin`) are skipped, never linked. Tree setup for pi: copy the git-ignored `packages/ai/src/providers/data/` and build with `build:offline` (the online build fetches model catalogs and failed once on a timeout) | P0 | ✅ |
+| W-9 | Tier A probe (copy-on-write) on a volume that has it: ReFS / Dev Drive here, or btrfs / APFS elsewhere. Not testable on this machine (W-1) | v0.2 | ⬜ |
 | W-5 | Case-insensitive paths and `\` vs `/` in ScopeGuard and path sets | v0.2 | ⬜ |
 | W-6 | Process re-adoption on Windows (PID plus start time) | v0.2 | ⬜ |
 
@@ -307,7 +311,8 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | K-1 | The gains do not appear at k = 2 | Medium | High | v0.05 go / no-go before any infrastructure | v0.05 |
 | K-2 | The Pi API changes after 1.5.0 | Medium | Medium | Pin the peer dependency; keep Pi calls behind GroupRuntime | all |
 | K-3 | Upstream does not accept the realctx / realtasks changes | Medium | Medium | Adapters (T-U); vendor if needed | all |
-| K-4 | Worktrees on Windows without a Dev Drive are too slow or too large | Medium | Medium | Measure in P0 (W-1, W-2); sparse-checkout | P0, v0.2 |
+| K-4 | Worktrees on Windows without a Dev Drive are too slow or too large | Medium | Medium | Measured (W-2): source is cheap, build outputs are the cost. Tier B seeding (W-7, W-8), tree pool, disk budget (D-17) | P0, v0.2 |
+| K-11 | A tool writes through a hard link and silently changes the base tree | Low | High | Small files copied, not linked; per-toolchain adapters only; the seed manifest check (`verify`) runs in the adapter's test and after benchmark runs | P0, v0.2 |
 | K-5 | Benchmark noise from nondeterministic models | High | Medium | N = 3, medians and IQR, fixed commits | v0.0 |
 | K-6 | Provider rate limits when workers run in parallel | Medium | High | Measure; per-group providers | v0.2 |
 | K-7 | The judge is miscalibrated | Medium | Medium | Labelled set; needs\_human fallback | v0.1 |
@@ -334,18 +339,25 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-9 | 2026-11-09 | Repository at `D:/Projects/realsubagents`, remote `wuuuming/realsubagents`, branch `main`; commits authored by GitHub account `wuuuming` (no-reply email, repo-local config) | Q-5, user |
 | D-10 | 2026-11-09 | Plain TypeScript run by Node type stripping (no build step), `node --test`, TypeScript 7 for typechecking; Pi 1.5.0 pinned in devDependencies, `*` peer dependencies (as realctx) | R0.2 |
 | D-11 | 2026-11-09 | Child Pi processes are started as `node <cli.js> --mode rpc` via `src/pi-cli.ts` (managed install → local package; `RSA_PI_CLI` override), one OS process per member | R0.3, W-3 |
+| D-12 | 2026-11-09 | Benchmark repositories: **BiliNova** (Rust workspace, 9 crates, Windows-native; frozen at `d65d4bd`) and **earendil-works/pi** (TypeScript npm workspaces, 12 packages; frozen at tag `v1.5.0`, `f9a2636`). Clones in `D:/rsa-bench/repos/` (outside this repository) | Q-1 |
+| D-13 | 2026-11-09 | Models: strong `claude-opus-5-5` (orchestrator, G0, workers, baseline); cheap `claude-haiku-5-5` (scouts, historian); semif as configured in realctx. Spend cap $5 per run, $150 per phase; a run that hits the cap counts as failed. Anthropic access is a subscription, so USD is computed from Pi's list prices | Q-2, Q-3 |
+| D-14 | 2026-11-09 | Benchmark isolation: the normal agent dir (so `auth.json`, with its rotating OAuth refresh token, is never copied); `--no-extensions` plus explicit `-e` for realctx and realtasks only (both arms identical); a fresh `REALCTX_HOME` per run with a copy of realctx's `config.json`; a per-run `--session-dir`. No memories carry over between runs | R0.0.2 |
+| D-15 | 2026-11-09 | Tree setup: untracked build prerequisites are linked (read-only) or copied (generated, small) into every new tree (design doc §13.1). BiliNova: junctions for `native/` (424 MB FFmpeg / libplacebo SDKs) and `native-audio/`; `player-core`'s build script fails without them. pi: copy `packages/ai/src/providers/data/` (1.1 MB), build with `build:offline` | W-2, W-8 |
+| D-17 | 2026-11-09 | Tree population (design doc §13.1): Tier A copy-on-write clone where the volume supports it; otherwise Tier B: worktree + linked prerequisites + hard-linked immutable dependencies and third-party build outputs (per-toolchain adapter, small files copied) + own build outputs; trees pooled by concurrent writers, recycled after merge, capped by a disk budget. Sparse-checkout dropped as the default (source is 1–7% of a tree) | W-2, W-7, W-8, K-4 |
+| D-18 | 2026-11-09 | Benchmark acceptance never uses a repository's full test suite as is: at the frozen commits BiliNova has 4 failing tests (of 1,221) and pi on Windows ~1,040 failing tests in 8 of 12 packages. Acceptance = the task's named tests pass, plus no test outside the baseline failure list fails | R0.0.1, R0.0.4 |
+| D-16 | 2026-11-09 | Defaults accepted: adapters plus upstream PRs (Q-4); plain worktrees on NTFS, no Dev Drive (Q-6); the v0.05 relay is a script (Q-7) | Q-4, Q-6, Q-7 |
 
 ### 7.2 Open inputs (needed before or during P0)
 
 | ID | Question | Needed by | Answer |
 | --- | --- | --- | --- |
-| Q-1 | Benchmark repositories: 2–3 real repositories, at least one monorepo with workspaces and one with ≥ 3 natural modules | v0.0 | |
-| Q-2 | Models: the strong model (orchestrator, G0, worker) and the cheap model (semif, historian, scouts) | v0.0 | |
-| Q-3 | Benchmark spend cap in USD, per run and per phase | v0.0 | |
-| Q-4 | Upstream strategy: adapters plus upstream PRs (recommended), a fork, or adapters only | v0.1 | |
+| Q-1 | Benchmark repositories: 2–3 real repositories, at least one monorepo with workspaces and one with ≥ 3 natural modules | v0.0 | BiliNova + earendil-works/pi (D-12) |
+| Q-2 | Models: the strong model (orchestrator, G0, worker) and the cheap model (semif, historian, scouts) | v0.0 | Opus 5.5 + Haiku 5.5 (D-13) |
+| Q-3 | Benchmark spend cap in USD, per run and per phase | v0.0 | $5 / run, $150 / phase (D-13) |
+| Q-4 | Upstream strategy: adapters plus upstream PRs (recommended), a fork, or adapters only | v0.1 | Adapters plus upstream PRs (D-16) |
 | Q-5 | Repository: `D:/Projects/realsubagents` as the package root? A git remote? | P0 | **Answered 2026-11-09:** yes; remote https://github.com/wuuuming/realsubagents (public), commits authored as `wuuuming` (D-9) |
-| Q-6 | Is a Dev Drive available, or can one be created? | P0 | |
-| Q-7 | v0.05 relay: a script (recommended, reproducible) or driven by hand | v0.05 | |
+| Q-6 | Is a Dev Drive available, or can one be created? | P0 | No; plain worktrees for now (D-16) |
+| Q-7 | v0.05 relay: a script (recommended, reproducible) or driven by hand | v0.05 | Script (D-16) |
 
 ---
 
@@ -422,3 +434,9 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Blocked: G0 needs Q-1, Q-2, Q-3, Q-4, Q-6, Q-7 from the user.
 - Decisions: D-9, D-10, D-11.
 - Next: once Q-1 … Q-3 are answered, redo W-2 / W-4 on those repositories, pass G0, start v0.0 (R0.0.1 task set, R0.0.2 runner, R0.0.3 meter).
+
+### 2026-11-09 — P0 (continued)
+- Done: R0.1 (Q-1 … Q-7 answered: D-12 … D-16); R0.4 (W-2, W-4 on the benchmark repositories); W-7, W-8 (Tier B tree seeding works for Cargo and npm, base trees untouched); tree population design written into the design doc §13.1 (D-17).
+- Baselines at the frozen commits: BiliNova builds only with its untracked SDKs linked (D-15) and has 4 failing tests; pi on Windows has ~1,040 failing tests in 8 of 12 packages → acceptance against a baseline failure list (D-18).
+- Found: realctx's historian and rewrite calls are not recorded in the session file, so the meter would under-count them (U-10).
+- Next: G0 check, then v0.0: R0.0.3 meter (with the U-10 workaround), R0.0.2 runner, R0.0.1 task set.
