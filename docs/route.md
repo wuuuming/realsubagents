@@ -104,9 +104,9 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
 | R0.1 | Answer the open inputs Q-1 … Q-7 (§7.2) | Decisions D-n recorded | ⬜ | |
-| R0.2 | Scaffold the repository: `git init`; TypeScript Pi package (`package.json` with `pi.extensions`, peer dependency `@earendil-works/pi-coding-agent` 1.5.0, `tsconfig`, `node --test`); folders `extensions/realsubagents/`, `src/`, `bench/`, `prompts/`, `reports/`, `docs/` (move the design doc and this route into `docs/`) | Repository builds, typecheck passes | ⬜ | |
-| R0.3 | Dev loop: load the extension with `pi -e ./extensions/realsubagents/index.ts`; a no-op `/rsa` command responds | Smoke test | ⬜ | |
-| R0.4 | Windows checks (T-W): Dev Drive available? `git worktree add` time and disk use on the benchmark repositories; Git Bash on PATH for child processes | W-1 … W-4 filled in | ⬜ | |
+| R0.2 | Scaffold the repository: `git init`; TypeScript Pi package (`package.json` with `pi.extensions`, peer dependency `@earendil-works/pi-coding-agent` 1.5.0, `tsconfig`, `node --test`); folders `extensions/realsubagents/`, `src/`, `bench/`, `prompts/`, `reports/`, `docs/` (move the design doc and this route into `docs/`) | Repository builds, typecheck passes | ✅ | `86d78c8`; `npm run typecheck`, `npm test` 1/1 |
+| R0.3 | Dev loop: load the extension with `pi -e ./extensions/realsubagents/index.ts`; a no-op `/rsa` command responds | Smoke test | ✅ | `86d78c8`; `npm run smoke` → `SMOKE OK: pi 1.5.0 (managed)` |
+| R0.4 | Windows checks (T-W): Dev Drive available? `git worktree add` time and disk use on the benchmark repositories; Git Bash on PATH for child processes | W-1 … W-4 filled in | 🟨 | W-1, W-3 done; W-2, W-4 measured on a proxy repository, to be redone on the Q-1 repositories |
 
 **G0:** the repository builds and typechecks, the extension loads in Pi, and Q-1 … Q-7 are decided.
 
@@ -256,10 +256,10 @@ realctx (WtzLAS) and realtasks (st0nie) are third-party packages, installed loca
 
 | ID | Item | Phase | Status |
 | --- | --- | --- | --- |
-| W-1 | Dev Drive (ReFS) available for worktrees? Block cloning works? | P0 | ⬜ |
-| W-2 | `git worktree add` time and disk use on the benchmark repositories | P0 | ⬜ |
-| W-3 | Git Bash for child `pi` processes (`bash` is not on PATH here; see the pi-patty-bg-tasks note in memory) | P0 | ⬜ |
-| W-4 | pnpm store, sccache and other caches available and configured | P0 / v0.2 | ⬜ |
+| W-1 | Dev Drive (ReFS) available for worktrees? Block cloning works? **2026-11-09:** none; C: and D: are NTFS. Windows build 26200 supports Dev Drive; creating one needs admin (Q-6). Until then, plain worktrees | P0 | ✅ |
+| W-2 | `git worktree add` time and disk use on the benchmark repositories. **2026-11-09 proxy** (BiliNova, 1,860 files, NTFS, D:): full worktree 2.1 s and 105 MB per tree (3 runs, ±0.04 s); sparse, one top directory: 0.45 s. Acceptable for k ≤ 5 at task boundaries; build outputs per tree are the real disk cost. Redo on the Q-1 repositories | P0 | 🟨 |
+| W-3 | Git Bash for child `pi` processes. **2026-11-09:** Pi resolves `%ProgramFiles%\Git\bin\bash.exe` itself (docs/windows.md), and realtasks' bash uses Pi's `getShellConfig()`. Child processes are started as `node <cli.js>` (`src/pi-cli.ts`), not through the `pi` launcher | P0 | ✅ |
+| W-4 | Shared build caches. **2026-11-09:** present: cargo, dotnet, uv, npm; absent: pnpm, sccache, Bazel, Gradle, Go. Which caches to configure depends on Q-1 | P0 / v0.2 | 🟨 |
 | W-5 | Case-insensitive paths and `\` vs `/` in ScopeGuard and path sets | v0.2 | ⬜ |
 | W-6 | Process re-adoption on Windows (PID plus start time) | v0.2 | ⬜ |
 
@@ -331,6 +331,9 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-6 | 2026-11-09 | Approval by policy, pipelined review, merge train with bisection | §8.1 |
 | D-7 | 2026-11-09 | Time targets follow Amdahl's law; large serial tasks have a no-regression target | §1 |
 | D-8 | 2026-11-09 | Phasing: v0.05 dry run added; cross-group work moved to v0.2 | §17.2 |
+| D-9 | 2026-11-09 | Repository at `D:/Projects/realsubagents`, remote `wuuuming/realsubagents`, branch `main`; commits authored by GitHub account `wuuuming` (no-reply email, repo-local config) | Q-5, user |
+| D-10 | 2026-11-09 | Plain TypeScript run by Node type stripping (no build step), `node --test`, TypeScript 7 for typechecking; Pi 1.5.0 pinned in devDependencies, `*` peer dependencies (as realctx) | R0.2 |
+| D-11 | 2026-11-09 | Child Pi processes are started as `node <cli.js> --mode rpc` via `src/pi-cli.ts` (managed install → local package; `RSA_PI_CLI` override), one OS process per member | R0.3, W-3 |
 
 ### 7.2 Open inputs (needed before or during P0)
 
@@ -340,7 +343,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | Q-2 | Models: the strong model (orchestrator, G0, worker) and the cheap model (semif, historian, scouts) | v0.0 | |
 | Q-3 | Benchmark spend cap in USD, per run and per phase | v0.0 | |
 | Q-4 | Upstream strategy: adapters plus upstream PRs (recommended), a fork, or adapters only | v0.1 | |
-| Q-5 | Repository: `D:/Projects/realsubagents` as the package root? A git remote? | P0 | |
+| Q-5 | Repository: `D:/Projects/realsubagents` as the package root? A git remote? | P0 | **Answered 2026-11-09:** yes; remote https://github.com/wuuuming/realsubagents (public), commits authored as `wuuuming` (D-9) |
 | Q-6 | Is a Dev Drive available, or can one be created? | P0 | |
 | Q-7 | v0.05 relay: a script (recommended, reproducible) or driven by hand | v0.05 | |
 
@@ -412,3 +415,10 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 ### 2026-11-09 — pre-P0
 - Done: design review; design doc rev 2 (critical issues C1–C5 resolved in the design); this route created.
 - Next: R0.1 (answer Q-1 … Q-7), then R0.2 – R0.4.
+
+### 2026-11-09 — P0
+- Done: R0.2 (`86d78c8`: repository, package, typecheck, tests), R0.3 (`npm run smoke`: Pi 1.5.0 in RPC mode loads only this extension; `/rsa` handled without a model call), W-1, W-3.
+- In progress: R0.4 (W-2 and W-4 measured on a proxy repository); R0.1 (Q-5 answered).
+- Blocked: G0 needs Q-1, Q-2, Q-3, Q-4, Q-6, Q-7 from the user.
+- Decisions: D-9, D-10, D-11.
+- Next: once Q-1 … Q-3 are answered, redo W-2 / W-4 on those repositories, pass G0, start v0.0 (R0.0.1 task set, R0.0.2 runner, R0.0.3 meter).
