@@ -2,7 +2,7 @@
  * R0.0.2 runner and R0.0.4 acceptance: one benchmark run of one task.
  *
  *   node bench/run.ts <task> [--mode agent|base|reference] [--arm baseline] [--n 1] [--keep] [--write-baseline]
- *                            [--model anthropic/claude-opus-5-5] [--thinking high] [--cap-usd 5] [--wall-min 90]
+ *                            [--model anthropic/claude-opus-5-5] [--thinking high] [--cap-usd 5] [--budget-usd 100] [--wall-min 90]
  *
  * Modes:
  * - agent:     the measured run. A single Pi session (realctx + realtasks, D-14) gets prompt.md once
@@ -21,6 +21,7 @@ import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { findPiCli } from "../src/pi-cli.ts";
 import { RpcClient, type RpcRecord } from "../src/rpc.ts";
+import { ledger } from "./ledger.ts";
 import { meter } from "./meter.ts";
 import { cargoFailures, compare, nodeTapFailures, readList, vitestFailures, type RegressionResult } from "./regression.ts";
 import { must, sh } from "./sh.ts";
@@ -53,6 +54,8 @@ export interface RunOptions {
 	model: string;
 	thinking: string;
 	capUsd: number;
+	/** D-21: phase budget; an agent run is refused if spend so far + capUsd would exceed it. */
+	budgetUsd: number;
 	wallMin: number;
 	runsRoot: string;
 }
@@ -237,6 +240,11 @@ async function acceptance(task: LoadedTask, tree: string, runDir: string, res: R
 
 export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult> {
 	const task = loadTask(taskId);
+	if (o.mode === "agent") {
+		const spent = ledger(o.runsRoot).totalUsd;
+		if (spent + o.capUsd > o.budgetUsd)
+			throw new Error(`phase budget: spent $${spent.toFixed(2)} + cap $${o.capUsd} > budget $${o.budgetUsd} (D-21); raise --budget-usd to override`);
+	}
 	const repo = loadRepos()[task.repo];
 	if (!repo) throw new Error(`unknown repo ${task.repo} (bench/repos.json)`);
 	const runDir = join(o.runsRoot, task.id, `${o.mode === "agent" ? o.arm : o.mode}-${o.n}`);
@@ -309,6 +317,7 @@ function parseArgs(argv: string[]): { task: string; o: RunOptions } {
 		model: "anthropic/claude-opus-5-5",
 		thinking: "high",
 		capUsd: 5,
+		budgetUsd: Number(process.env.RSA_PHASE_BUDGET ?? 100),
 		wallMin: 90,
 		runsRoot: process.env.RSA_RUNS ?? "D:/rsa-bench/runs",
 	};
@@ -324,6 +333,7 @@ function parseArgs(argv: string[]): { task: string; o: RunOptions } {
 		else if (a === "--model") o.model = v();
 		else if (a === "--thinking") o.thinking = v();
 		else if (a === "--cap-usd") o.capUsd = Number(v());
+		else if (a === "--budget-usd") o.budgetUsd = Number(v());
 		else if (a === "--wall-min") o.wallMin = Number(v());
 		else if (a === "--runs") o.runsRoot = v();
 		else task = a;

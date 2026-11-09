@@ -40,7 +40,7 @@ The design doc says *what* to build. This route says *in what order*, *how each 
 
 ## 1. Destination: goal and health metrics
 
-**Goal metrics** (design doc §1). The baseline is a single Pi session with realctx, same models and same task set. Each figure is the median over N = 3 runs, with its interquartile range.
+**Goal metrics** (design doc §1). The baseline is a single Pi session with realctx, same models and same task set. Each figure is the median over N runs (N = 3 for small tasks, N = 2 for large ones under the v0.0 budget, D-21), with its spread.
 
 | ID | Metric | Target | Baseline | Latest | Status | Source |
 | --- | --- | --- | --- | --- | --- | --- |
@@ -116,15 +116,15 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| R0.0.1 | Task set: ≥ 10 small, ≥ 6 large serial, ≥ 6 large parallel (≥ 2 with k ≥ 3), over 2–3 repositories, each frozen at a commit with an acceptance command | `bench/tasks/<id>/task.json` + `prompt.md` (D-19) | 🟨 | 1 of ≥ 22: `pi-tui-wrap-boundary` (small), validated base ✗ / reference ✓ |
-| R0.0.2 | Runner: headless baseline runs (`pi --mode json` or RPC) with realctx on, in a fresh worktree at the frozen commit plus the repository's tree setup (D-15), isolated per D-14, N = 3 per task, per-run spend cap | `bench/run.ts` | ✅ | `bench/run.ts` (+ `task.ts`, `sh.ts`, `repos.json`); modes agent / base / reference; pilot run accepted, [report](../reports/bench/pilot-2026-11-09.md) |
+| R0.0.1 | Task set (D-21): 6 small, 3 large serial, 4 large parallel (≥ 2 with k ≥ 3), over 2 repositories, each frozen at a commit with an acceptance command | `bench/tasks/<id>/task.json` + `prompt.md` (D-19) | 🟨 | 1 of ≥ 22: `pi-tui-wrap-boundary` (small), validated base ✗ / reference ✓ |
+| R0.0.2 | Runner: headless baseline runs (`pi --mode json` or RPC) with realctx on, in a fresh worktree at the frozen commit plus the repository's tree setup (D-15), isolated per D-14, N per D-21, per-run spend cap, phase budget guard | `bench/run.ts` | ✅ | `bench/run.ts` (+ `task.ts`, `sh.ts`, `repos.json`); modes agent / base / reference; pilot run accepted, [report](../reports/bench/pilot-2026-11-09.md) |
 | R0.0.3 | Meter: read the session file: assistant-message `usage` **and** `usage` entries of kind `cache_warm`. Cost per role, four raw token counts, wall-clock, turns, compactions | `bench/meter.ts`, one JSON per run | ✅ | `bench/meter.ts` (assistant `usage`, `usage` entries, compaction `usage`, extension calls via `rsa-usage` entries + sidecar; per role / model, H-2 cache hit rate, turns, compactions); `tests/meter.test.ts` 4/4; `bench/usage-probe.ts` against Pi 1.5.0 → `USAGE PROBE OK` |
 | R0.0.4 | Acceptance check after each run; failed runs reported separately | Success rate per task (M-6) | ✅ | `bench/regression.ts`: named tests + full suite vs. baseline failure list (cargo, vitest JSON, node TAP); `tests/regression.test.ts` |
 | R0.0.5 | Trace extraction per turn: context length, new tokens Δ, output O, cold restarts | `bench/traces/` | 🟨 | Extractor done in `bench/meter.ts --trace` (ctx, Δ, O, cold restarts, after-compaction per call); traces land in `bench/traces/` once runs exist |
 | R0.0.6 | Cost model: implementation and fitting (P, g, Δ, O per class; cold-restart rate); held-out error | `src/costmodel.ts`, `bench/fit.ts` | ⬜ | |
 | R0.0.7 | Benchmark report #1 (baseline) | `reports/bench/001-baseline.md` | ⬜ | |
 
-**G0.0:** every task has N = 3 baseline runs with spread reported; H-1 within ±15% on held-out tasks.
+**G0.0:** every task has its N baseline runs (D-21) with spread reported; total spend ≤ $100; H-1 within ±15% on held-out tasks.
 
 ### v0.05 — Manual dry run (go / no-go)
 
@@ -348,6 +348,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-16 | 2026-11-09 | Defaults accepted: adapters plus upstream PRs (Q-4); plain worktrees on NTFS, no Dev Drive (Q-6); the v0.05 relay is a script (Q-7) | Q-4, Q-6, Q-7 |
 | D-19 | 2026-11-09 | Task format and validation: a task is reconstructed from a historical commit (`source`) at its parent (`base`); the commit's tests are withheld and checked out only at acceptance; `prompt.md` states the problem as the issue did, not the fix. A task enters the set only if `--mode base` is rejected and `--mode reference` (the historical change) is accepted; the reference run writes the regression baseline list | R0.0.1, R0.0.4 |
 | D-20 | 2026-11-09 | realctx's own model calls in benchmark runs (historian `history.model` and memory edit/merge `rewriteModel`, which otherwise fall back to the session model) use `anthropic/claude-haiku-5-5`, per D-13; the runner sets both in the per-run config. The user's `history.model` (`openai/gpt-6-luna`) is not used in benchmarks | D-13; pilot found rewrites on opus |
+| D-21 | 2026-11-09 | v0.0 budget $100 in total (the pilot included). Task set cut to 6 small (N = 3), 3 large serial (N = 2), 4 large parallel (N = 2); about $81 estimated, rest is reserve. One large task is run first and the counts re-planned from its cost. `bench/run.ts` refuses an agent run when spend so far plus the per-run cap would exceed the phase budget. Replaces D-13's $150 per phase for v0.0 | User, 2026-11-09 |
 
 ### 7.2 Open inputs (needed before or during P0)
 
@@ -355,7 +356,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | --- | --- | --- | --- |
 | Q-1 | Benchmark repositories: 2–3 real repositories, at least one monorepo with workspaces and one with ≥ 3 natural modules | v0.0 | BiliNova + earendil-works/pi (D-12) |
 | Q-2 | Models: the strong model (orchestrator, G0, worker) and the cheap model (semif, historian, scouts) | v0.0 | Opus 5.5 + Haiku 5.5 (D-13) |
-| Q-3 | Benchmark spend cap in USD, per run and per phase | v0.0 | $5 / run, $150 / phase (D-13) |
+| Q-3 | Benchmark spend cap in USD, per run and per phase | v0.0 | $5 / run (D-13); v0.0 phase $100 (D-21) |
 | Q-4 | Upstream strategy: adapters plus upstream PRs (recommended), a fork, or adapters only | v0.1 | Adapters plus upstream PRs (D-16) |
 | Q-5 | Repository: `D:/Projects/realsubagents` as the package root? A git remote? | P0 | **Answered 2026-11-09:** yes; remote https://github.com/wuuuming/realsubagents (public), commits authored as `wuuuming` (D-9) |
 | Q-6 | Is a Dev Drive available, or can one be created? | P0 | No; plain worktrees for now (D-16) |
@@ -446,4 +447,4 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 ### 2026-11-09 — v0.0 (runner)
 - Done: G0; R0.0.3 meter (+ U-10 workaround); R0.0.2 runner; R0.0.4 acceptance with regression lists (D-18, D-19); first task and first paid pilot run ([report](../reports/bench/pilot-2026-11-09.md)): accepted, $1.42, 7.5 min, 30 model calls, 95% cache hits.
 - Found: realctx's memory rewrites ran on the session model (opus) because `rewriteModel` is empty → D-20. realctx writes project-shared memories into `<tree>/.pi/realctx/`; the runner leaves them out of the diff. realtasks is not isolated per run (state under the agent dir).
-- Next: R0.0.1 task set (≥ 22 tasks over pi and BiliNova), then N = 3 baseline runs per task.
+- Next: R0.0.1 task set (13 tasks, D-21), validated for free; one large run to price large tasks; then the baseline runs.
