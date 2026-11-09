@@ -63,6 +63,8 @@ export function readList(file: string): Set<string> {
 }
 
 export interface RegressionResult {
+	/** New failures that passed on the re-run (D-18 flake rule); not counted. */
+	flaky?: string[];
 	failed: number;
 	/** Failures not in the baseline list: the run broke these. */
 	newFailures: string[];

@@ -16,7 +16,7 @@
  * `$RSA_RUNS/<task>/<arm>-<n>/` (default D:/rsa-bench/runs): result.json, meter.json,
  * trace.jsonl, diff.patch, acceptance.log, pi-stderr.log, sessions/.
  */
-import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { findPiCli } from "../src/pi-cli.ts";
@@ -97,6 +97,8 @@ export interface RunResult {
 	setupMs: number;
 	acceptanceMs?: number;
 	baseIntact?: boolean;
+	/** Set by `--rescore`: the verdict before the harness fix. */
+	rescored?: { at: string; harness: string; previous: Pick<RunResult, "status" | "accepted" | "regression" | "error"> };
 	versions: Record<string, string>;
 	startedAt: string;
 	runDir: string;
@@ -220,7 +222,11 @@ async function addWithheldTests(task: LoadedTask, tree: string): Promise<void> {
 		for (const w of p.withhold) {
 			const atBase = await sh(`git cat-file -e ${task.base}:${q(w)}`, { cwd: tree });
 			if (atBase.code === 0) await must(`git checkout ${task.base} -- ${q(w)}`, tree);
-			else rmSync(join(tree, w), { recursive: true, force: true });
+			else {
+				// New in source. If the agent created it, `git add -A -N` left an index entry that blocks --3way.
+				await must(`git rm -r -q --cached --ignore-unmatch -- ${q(w)}`, tree);
+				rmSync(join(tree, w), { recursive: true, force: true });
+			}
 		}
 		await must(`git diff --binary ${p.from} ${p.source} -- ${p.withhold.map(q).join(" ")} | git apply --3way --whitespace=nowarn`, tree);
 	}
@@ -238,8 +244,8 @@ async function acceptance(task: LoadedTask, tree: string, runDir: string, res: R
 	res.accepted = a.code === 0 && !a.timedOut;
 	const checks = regressionChecks(task);
 	const results: RegressionResult[] = [];
-	for (const [i, check] of checks.entries()) {
-		const sfx = checks.length > 1 ? `-${i + 1}` : "";
+	const flaky: string[] = [];
+	const runCheck = async (check: (typeof checks)[number], sfx: string): Promise<Set<string>> => {
 		const vitestJson = join(runDir, `vitest${sfx}.json`);
 		const r = await sh(check.command, {
 			cwd: tree,
@@ -259,11 +265,23 @@ async function acceptance(task: LoadedTask, tree: string, runDir: string, res: R
 						? vitestFailures(readFileSync(vitestJson, "utf8"), tree)
 						: new Set(["<no vitest json>"]);
 		if (r.timedOut) failures.add("<timeout>");
+		return failures;
+	};
+	for (const [i, check] of checks.entries()) {
+		const sfx = checks.length > 1 ? `-${i + 1}` : "";
+		let failures = await runCheck(check, sfx);
 		const baselineFile = join(task.dir, check.baselineFailures);
 		if (writeBaseline) {
 			const sources = partsOf(task).map((x) => x.source).join(" + ");
 			const header = `# Failures of the reference solution (${sources}) at ${new Date().toISOString().slice(0, 10)}; written by run.ts --mode reference --write-baseline\n`;
 			writeFileSync(baselineFile, header + [...failures].sort().join("\n") + "\n");
+		}
+		// D-18 flake rule: re-run a check once when it shows new failures; only failures seen twice count.
+		const first = compare(failures, readList(baselineFile));
+		if (!writeBaseline && first.newFailures.length) {
+			const again = await runCheck(check, `${sfx}-retry`);
+			for (const f of first.newFailures) if (!again.has(f)) flaky.push(f);
+			failures = new Set([...failures].filter((f) => !first.newFailures.includes(f) || again.has(f)));
 		}
 		results.push(compare(failures, readList(baselineFile)));
 	}
@@ -273,6 +291,7 @@ async function acceptance(task: LoadedTask, tree: string, runDir: string, res: R
 			newFailures: results.flatMap((x) => x.newFailures),
 			fixed: results.flatMap((x) => x.fixed),
 			ok: results.every((x) => x.ok),
+			...(flaky.length ? { flaky } : {}),
 		};
 		if (!res.regression.ok) res.accepted = false;
 	}
@@ -355,6 +374,46 @@ export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult>
 	return res;
 }
 
+/**
+ * Re-check a finished agent run with the current harness: rebuild the tree at base, apply the run's
+ * saved diff.patch, run acceptance again. Cost and time stay as measured; the old verdict is kept
+ * under `rescored.previous`. Used after a harness fix (no model calls, free).
+ */
+export async function rescore(runDir: string): Promise<RunResult> {
+	const res = JSON.parse(readFileSync(join(runDir, "result.json"), "utf8")) as RunResult;
+	const task = loadTask(res.task);
+	const repo = loadRepos()[task.repo];
+	const tree = join(runDir, "tree");
+	if (existsSync(tree)) throw new Error(`${tree} exists`);
+	const patch = join(runDir, "diff.patch");
+	if (!existsSync(patch)) throw new Error(`${patch} missing; cannot rescore`);
+	const previous = { status: res.status, accepted: res.accepted, regression: res.regression, error: res.error?.split("\n")[0] };
+	const lines: string[] = [];
+	const log = (s: string) => {
+		lines.push(s);
+		console.error(`[${task.id} rescore] ${s}`);
+	};
+	try {
+		await prepareTree(task, repo, tree, log);
+		if (statSync(patch).size) await must(`git apply --whitespace=nowarn ${q(patch)}`, tree);
+		res.status = "ok";
+		delete res.error;
+		delete res.regression;
+		await acceptance(task, tree, runDir, res);
+		if (repo.seed) res.baseIntact = (await sh(`node ${q(SEED)} verify --dest ${q(tree)}`, { cwd: ROOT })).code === 0;
+	} catch (err) {
+		res.status = "error";
+		res.error = String((err as Error)?.stack ?? err).slice(0, 4000);
+		log(res.error);
+	} finally {
+		res.rescored = { at: new Date().toISOString(), harness: await gitHead(ROOT), previous };
+		writeFileSync(join(runDir, "rescore.log"), lines.join("\n") + "\n");
+		writeFileSync(join(runDir, "result.json"), JSON.stringify(res, null, 2) + "\n");
+		if (existsSync(tree)) await removeTree(repo, tree);
+	}
+	return res;
+}
+
 function parseArgs(argv: string[]): { task: string; o: RunOptions } {
 	const o: RunOptions = {
 		mode: "agent",
@@ -394,8 +453,8 @@ function parseArgs(argv: string[]): { task: string; o: RunOptions } {
 }
 
 if (import.meta.main) {
-	const { task, o } = parseArgs(process.argv.slice(2));
-	const r = await runOnce(task, o);
+	const rs = process.argv.indexOf("--rescore");
+	const r = rs > 0 ? await rescore(process.argv[rs + 1]) : await runOnce(parseArgs(process.argv.slice(2)).task, parseArgs(process.argv.slice(2)).o);
 	console.log(JSON.stringify({ task: r.task, mode: r.mode, status: r.status, accepted: r.accepted, costUsd: r.costUsd, wallClockMs: r.wallClockMs, regression: r.regression && { ok: r.regression.ok, newFailures: r.regression.newFailures.slice(0, 20) }, baseIntact: r.baseIntact, runDir: r.runDir, error: r.error?.split("\n")[0] }, null, 1));
 	process.exit(r.status === "error" ? 1 : 0);
 }
