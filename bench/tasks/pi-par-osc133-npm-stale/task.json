@@ -1,0 +1,44 @@
+{
+	"id": "pi-par-osc133-npm-stale",
+	"repo": "pi",
+	"base": "ba7bdb9af",
+	"label": "large-parallel",
+	"expectedGroups": [
+		"packages/tui",
+		"packages/coding-agent"
+	],
+	"k": 2,
+	"parts": [
+		{
+			"source": "19ce8059c",
+			"withhold": [
+				"packages/tui/test/tui-render.test.ts"
+			]
+		},
+		{
+			"source": "0d23d5345",
+			"withhold": [
+				"packages/coding-agent/test/package-manager.test.ts"
+			]
+		}
+	],
+	"acceptance": {
+		"command": "s=0; (cd packages/tui && node --test test/tui-render.test.ts) || s=1; (cd packages/coding-agent && npx vitest --run test/package-manager.test.ts -t \"should warn when an npm update leaves the installed version unchanged\") || s=1; exit $s",
+		"timeoutSec": 1200
+	},
+	"regression": [
+		{
+			"command": "cd packages/tui && node --test --test-reporter=tap test/*.test.ts",
+			"parser": "node-tap",
+			"baselineFailures": "baseline-failures-tui.txt",
+			"timeoutSec": 900
+		},
+		{
+			"command": "cd packages/coding-agent && npx vitest --run --reporter=json --outputFile=\"$RSA_VITEST_JSON\"",
+			"parser": "vitest-json",
+			"baselineFailures": "baseline-failures-coding-agent.txt",
+			"timeoutSec": 1800
+		}
+	],
+	"notes": "Composite, k = 2: pi#11565 (tui), pi#11571 (coding-agent); two packages, no shared files. Acceptance names the commit's new tests (-t): other tests in the same file fail on Windows before and after the change."
+}

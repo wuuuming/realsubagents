@@ -1,0 +1,9 @@
+Three unrelated problems in three packages. Fix all three; each fix is independent of the others.
+
+1. **packages/tui: images in Orca.** Pi's terminal capability detection (`detectCapabilities()` in `src/terminal-image.ts`) does not know the Orca terminal, so image components fall back to text there. Treat `TERM_PROGRAM=Orca` as supporting true color and OSC 8 hyperlinks, and as Kitty-image capable only when Orca advertises it with `ORCA_IMAGE_PROTOCOL=kitty` (older Orca releases do not support images and must keep the text fallback: `images` stays `null`). The existing tmux and screen precedence rules must keep working (issue #7357).
+
+2. **packages/durable: `read` of an image in Code Mode returns `""`.** In pi-durable, a Code Mode script that calls the built-in `read` tool on an image gets an empty string, so `image(await tools.read({ path: "pixel.png" }))` throws a TypeError. Code Mode resolves a tool that declares no structured output with its text only, and the read result for an image has no text. Make `read` (`src/tools/read.ts`) declare a structured output (a string, or an image block `{ type: "image", data, mimeType }`) and return it: the text for a text file (so scripts see the same value as before), the image block for an image. The coding agent fixed the same problem earlier (#10251). Update the README section on structured output.
+
+3. **packages/coding-agent: a saved "Do not trust" decision is ignored.** When a project has no trust-requiring resources, Pi auto-trusts it, even if the user saved a "Do not trust" decision for it, so `ctx.isProjectTrusted()` returns `true` to extensions (issue #10947). A saved decision (either way) must take precedence over auto-trust, both in `resolveProjectTrusted` (`src/core/project-trust.ts`) and in the startup path in `src/main.ts`. Without a saved decision, auto-trust stays as it is.
+
+Add tests for each, and keep the test suites of the three packages passing.

@@ -1,0 +1,4 @@
+# Failures of the reference solution (f07e0d0) at 2026-11-09; written by run.ts --mode reference --write-baseline
+audio::tests::the_audio_callback_body_takes_no_lock_and_never_blocks
+gate_modules_require_the_non_default_feature
+pages::float_host::tests::round4_home_and_search_have_no_bespoke_float_host_path

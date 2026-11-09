@@ -1,0 +1,27 @@
+{
+	"id": "bilinova-audio-source-factory",
+	"repo": "bilinova",
+	"base": "05e9ff6",
+	"source": "f07e0d0",
+	"label": "large-serial",
+	"expectedGroups": [
+		"crates/player-core"
+	],
+	"withhold": [
+		"crates/player-core/tests/audio_source_contract.rs",
+		"crates/player-core/tests/audio_source_contract_suite.rs"
+	],
+	"acceptance": {
+		"command": "cargo test -p player-core --test audio_source_contract",
+		"timeoutSec": 1800
+	},
+	"regression": [
+		{
+			"command": "cargo test --workspace --no-fail-fast 2>&1",
+			"parser": "cargo",
+			"baselineFailures": "baseline-failures.txt",
+			"timeoutSec": 2400
+		}
+	],
+	"notes": "BiliNova f07e0d0 (B2). One crate, a chain: error types -> factory trait -> session/rebind -> decoder open -> windows.rs (5 files, +881). Acceptance covers only the factory contract; the session refactor is checked by regression only (route D-22). Needs samples/dash-avio (untracked, linked by repos.json)."
+}

@@ -1,0 +1,25 @@
+{
+	"id": "pi-extension-changelog",
+	"repo": "pi",
+	"base": "9628c8480",
+	"source": "b4b72a351",
+	"label": "large-serial",
+	"expectedGroups": [
+		"packages/coding-agent"
+	],
+	"withhold": [
+		"packages/coding-agent/test/interactive-mode-extension-changelog.test.ts",
+		"packages/coding-agent/test/package-manager.test.ts"
+	],
+	"acceptance": {
+		"command": "cd packages/coding-agent && npx vitest --run test/interactive-mode-extension-changelog.test.ts test/package-manager.test.ts -t \"InteractiveMode extension changelog|should expose manifest changelogPath on package resources|should expose package CHANGELOG.md by convention|should still auto-discover resources when pi manifest only declares changelogPath\"",
+		"timeoutSec": 900
+	},
+	"regression": {
+		"command": "cd packages/coding-agent && npx vitest --run --reporter=json --outputFile=\"$RSA_VITEST_JSON\"",
+		"parser": "vitest-json",
+		"baselineFailures": "baseline-failures.txt",
+		"timeoutSec": 1800
+	},
+	"notes": "pi#8790 (addresses #5958). One package, a chain: manifest -> package manager metadata -> source info -> settings -> interactive mode -> docs (11 files, +449). Acceptance names the commit's new tests (-t): other tests in the same file fail on Windows before and after the change."
+}

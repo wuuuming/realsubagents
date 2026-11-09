@@ -1,7 +1,7 @@
 {
 	"bilinova": {
 		"base": "D:/rsa-bench/repos/bilinova",
-		"setup": { "from": "D:/Projects/BiliNova", "link": ["native", "native-audio"] },
+		"setup": { "from": "D:/Projects/BiliNova", "link": ["native", "native-audio", "samples"] },
 		"seed": "cargo",
 		"prepare": ["cargo test --workspace --no-run --quiet"],
 		"prepareTimeoutSec": 1800

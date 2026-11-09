@@ -1,0 +1,45 @@
+{
+	"id": "pi-par-wsl-durable-ranking",
+	"repo": "pi",
+	"base": "c2760d32c",
+	"label": "large-parallel",
+	"expectedGroups": [
+		"packages/coding-agent",
+		"packages/durable"
+	],
+	"k": 2,
+	"parts": [
+		{
+			"source": "6454d07ec",
+			"withhold": [
+				"packages/coding-agent/test/clipboard-command.test.ts",
+				"packages/coding-agent/test/external-editor.test.ts"
+			]
+		},
+		{
+			"source": "c7372af42",
+			"withhold": [
+				"packages/durable/test/search.test.ts"
+			]
+		}
+	],
+	"acceptance": {
+		"command": "s=0; (cd packages/coding-agent && npx vitest --run test/clipboard-command.test.ts -t \"runs commands from the filesystem root\") || s=1; (cd packages/durable && npx vitest --run test/search.test.ts) || s=1; exit $s",
+		"timeoutSec": 1200
+	},
+	"regression": [
+		{
+			"command": "cd packages/coding-agent && npx vitest --run --reporter=json --outputFile=\"$RSA_VITEST_JSON\"",
+			"parser": "vitest-json",
+			"baselineFailures": "baseline-failures-coding-agent.txt",
+			"timeoutSec": 1800
+		},
+		{
+			"command": "cd packages/durable && npx vitest --run --reporter=json --outputFile=\"$RSA_VITEST_JSON\"",
+			"parser": "vitest-json",
+			"baselineFailures": "baseline-failures-durable.txt",
+			"timeoutSec": 1800
+		}
+	],
+	"notes": "Composite, k = 2: pi#11627 (coding-agent, #11592), pi#11631 (durable); two packages, no shared files. WSL part: acceptance runs only the commit's new test; external-editor.test.ts (no new tests in 6454d07ec) fails 3 tests on Windows before and after."
+}

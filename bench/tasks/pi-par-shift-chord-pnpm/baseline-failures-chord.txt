@@ -1,0 +1,2 @@
+# Failures of the reference solution (86dc686cf + 50d9f823e + c2760d32c) at 2026-11-09; written by run.ts --mode reference --write-baseline
+packages/chord/test/boundary.test.ts::package boundary does not depend on Pi packages other than pi-telemetry, or on files outside Chord
