@@ -121,7 +121,9 @@ export async function relayRun(
 	await Promise.all(WORKERS.map((w) => prepareTree(task, repo, agents[w].tree, (s) => log(`[${w}] ${s}`))));
 	relay.workerSetupMs = Date.now() - s0;
 
-	const excludes = [...DIFF_EXCLUDE, ...(repo.setup?.link ?? []), ...(repo.setup?.copy ?? [])].map((p) => `':(exclude)${p}'`).join(" ");
+	// Harness paths never go into a worker commit. `git add` with an exclude pathspec fails when the
+	// path is gitignored, so stage everything and unstage these instead.
+	const harnessPaths = [...DIFF_EXCLUDE, ...(repo.setup?.link ?? []), ...(repo.setup?.copy ?? [])].map((p) => `'${p}'`).join(" ");
 	const user = (() => {
 		const f = join(AGENT_DIR, "realctx", "config.json");
 		return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
@@ -285,7 +287,8 @@ export async function relayRun(
 	};
 
 	const commitWorker = async (w: Agent, summary: string): Promise<string> => {
-		await must(`git add -A -- . ${excludes}`, w.tree);
+		await must("git add -A", w.tree);
+		await sh(`git reset -q -- ${harnessPaths}`, { cwd: w.tree });
 		const staged = await sh("git diff --cached --quiet", { cwd: w.tree });
 		if (staged.code !== 0) {
 			const msg = `${w.role}: ${summary.split("\n")[0].slice(0, 120)}`.replaceAll("'", "");
@@ -403,13 +406,14 @@ export async function relayRun(
 		clearTimeout(wallTimer);
 		stopping = true;
 		res.wallClockMs = Date.now() - t0;
+		// Abort everyone first. Then kill each agent's own descendants (background tasks), matching by
+		// its tree: matching by runDir would also hit the other agents' Pi processes, whose command
+		// lines contain the run dir. Close the clients, then sweep anything left under the run dir.
+		const live = Object.values(agents).filter((a) => a.client);
+		await Promise.all(live.map((a) => a.client!.send({ type: "abort" }, 30_000).catch(() => {})));
 		let leftovers = 0;
-		for (const a of Object.values(agents)) {
-			if (!a.client) continue;
-			await a.client.send({ type: "abort" }, 30_000).catch(() => {});
-			leftovers += killLeftovers(a.client.child.pid, runDir).length;
-		}
-		for (const a of Object.values(agents)) if (a.client) await a.client.close(10_000).catch(() => {});
+		for (const a of live) leftovers += killLeftovers(a.client!.child.pid, a.tree).length;
+		await Promise.all(live.map((a) => a.client!.close(10_000).catch(() => {})));
 		leftovers += killLeftovers(undefined, runDir).length;
 		res.leftoverProcesses = leftovers;
 		await queue.catch(() => {});
