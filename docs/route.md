@@ -358,6 +358,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-24 | 2026-11-09 | Supersedes D-20 (user's choice). realctx's own model calls in benchmark runs (`rewriteModel`, `history.model`) are left empty, so they use the session model, as in the user's own setup (the user does not want haiku as historian). `RSA_REALCTX_MODEL` still overrides. Costs more per run; the meter shows these calls under caller `realctx` | user, 2026-11-09 |
 | D-25 | 2026-11-10 | H-1 is measured per class: the sum of held-out predictions vs. measured spend must be within ±15% for every class; the median per-task error is reported next to the noise floor (within-task CV). Reason: the model is used per class (§7.2 threshold, §15 arm comparison), and per-task error at N = 2–3 is bounded below by run-to-run noise (12% median, 34% max). | `reports/bench/001-baseline.md` |
 | D-26 | 2026-11-10 | G0.05 not passed with prompts v0. The user chose one iteration on time: prompts v1 (`prompts/v1/`, arm `rsav1`) move the repo-wide checks from each worker to one run by the orchestrator on the merged tree (§14 verification placement; total verification equals the baseline's single final check) and balance the split by expected work (§8 Partitioner). The 12 runs (4 large-parallel tasks × N = 3) are repeated and judged by the same G0.05 rule. Phase budget guard raised to $120 (expected spend ≈ $113; the margin covers the per-run cap of $5). | user, 2026-11-10 |
+| D-27 | 2026-11-10 | Project budget cap: **$215 in total** for all benchmark spend in the repository (all phases, pilots and failed runs included), set by the user. v0.0 + v0.05 stay within the D-26 guard of $120; the rest (≥ $95) is for v0.1–v0.4. Plan: measure cost and time fully once (v0.2); v0.1, v0.3 and v0.4 check mainly function, plus small targeted runs. The baseline is reused while the model, Pi and realctx pins are unchanged. `bench/ledger.ts` sums spend across all phases. | user, 2026-11-10 |
 
 ### 7.2 Open inputs (needed before or during P0)
 
@@ -365,7 +366,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | --- | --- | --- | --- |
 | Q-1 | Benchmark repositories: 2–3 real repositories, at least one monorepo with workspaces and one with ≥ 3 natural modules | v0.0 | BiliNova + earendil-works/pi (D-12) |
 | Q-2 | Models: the strong model (orchestrator, G0, worker) and the cheap model (semif, historian, scouts) | v0.0 | Opus 5.5 + Haiku 5.5 (D-13) |
-| Q-3 | Benchmark spend cap in USD, per run and per phase | v0.0 | $5 / run (D-13); v0.0 phase $100 (D-21) |
+| Q-3 | Benchmark spend cap in USD, per run and per phase | v0.0 | $5 / run (D-13); v0.0 phase $100 (D-21); v0.05 guard $120 (D-26); project total $215 (D-27) |
 | Q-4 | Upstream strategy: adapters plus upstream PRs (recommended), a fork, or adapters only | v0.1 | Adapters plus upstream PRs (D-16) |
 | Q-5 | Repository: `D:/Projects/realsubagents` as the package root? A git remote? | P0 | **Answered 2026-11-09:** yes; remote https://github.com/wuuuming/realsubagents (public), commits authored as `wuuuming` (D-9) |
 | Q-6 | Is a Dev Drive available, or can one be created? | P0 | No; plain worktrees for now (D-16) |
