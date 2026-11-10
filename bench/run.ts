@@ -174,7 +174,7 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 	const sidecar = join(runDir, "usage-sidecar.jsonl");
 	const sessionDir = join(runDir, "sessions");
 	// Arm `ext` (route R1.11): the same session with the realsubagents extension loaded, as a user runs it.
-	const ext = o.arm === "ext";
+	const ext = o.arm.startsWith("ext");
 	const rsaHome = join(runDir, "rsa");
 	const repo = loadRepos()[task.repo];
 	const extEnv: NodeJS.ProcessEnv = ext

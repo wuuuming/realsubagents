@@ -17,6 +17,7 @@ for r in $(seq 1 "$ROUNDS"); do
 		case "$label" in small) n=3; cap=5 ;; *) n=2; cap=8 ;; esac
 		if [ "${ARM#rsa}" != "$ARM" ]; then [ "$label" = large-parallel ] || continue; n=3; cap=8; fi
 		# ARM=ext (G0.1, real extension): large-parallel N=3, small N=1 (escalation must not fire), no large-serial.
+		if [ "$ARM" = ext2 ]; then [ "$label" = large-parallel ] || continue; n=3; cap=6; fi
 		if [ "$ARM" = ext ]; then case "$label" in large-parallel) n=3; cap=6 ;; small) n=1; cap=4 ;; *) continue ;; esac; fi
 		[ "$r" -le "$n" ] || continue
 		[ -d "$RUNS/$t/$ARM-$r" ] && { echo "SKIP $t $ARM-$r (exists)"; continue; }
