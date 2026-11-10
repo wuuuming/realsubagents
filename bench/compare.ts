@@ -127,7 +127,7 @@ if (import.meta.main) {
 
 	const rsa = runs.filter((r) => r.arm === ARM);
 	const per = rsa.map((r) => ({
-		run: `${r.task}/rsa-${r.n}`,
+		run: `${r.task}/${r.arm}-${r.n}`,
 		accepted: r.accepted,
 		serial: r.relay ? serialFraction(r.relay.events, r.wallMs) : Number.NaN,
 		overhead: (r.byRole.orch?.costUsd ?? 0) / r.costUsd,

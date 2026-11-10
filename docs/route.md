@@ -57,10 +57,10 @@ The design doc says *what* to build. This route says *in what order*, *how each 
 | --- | --- | --- | --- | --- | --- |
 | H-1 | Cost-model prediction error (held-out, per-class aggregate; D-25) | within ±15% | v0.0 | per task: median 23.6% (6/13 within); per class aggregate: −0.7% / −2.6% / +0.2%; noise floor (within-task CV) 12% | ✅ (D-25) |
 | H-2 | Prompt-cache hit rate (cache read ÷ total input), per role | ≥ 90% | v0.0 | — | — |
-| H-3 | Serial fraction of parallel runs | < 25% | v0.05 | 41% (imbalance + per-worker verification) | ❌ |
+| H-3 | Serial fraction of parallel runs | < 25% | v0.05 | v0 41%, v1 48% (fixed split + check share of shorter runs) | ❌ (v0.2 target) |
 | H-4a | Missed escalations (direct tasks that compacted or passed break-even) | ≤ 10% | v0.1 | — | — |
 | H-4b | False hints (escalated tasks that ran as one lane and finished under break-even) | ≤ 20% | v0.1 | — | — |
-| H-5 | Overhead share: C\_overhead ÷ C\_rsa (design doc §15.1) | ≤ 15% | v0.05 | 10% | ✅ |
+| H-5 | Overhead share: C\_overhead ÷ C\_rsa (design doc §15.1) | ≤ 15% | v0.05 | v0 10%, v1 15% | ✅ (at limit) |
 | H-6 | Review quality: false accepts / needs\_human rate | 0 / ≤ 15% | v0.1 | — | — |
 | H-7 | Scope violations; builds broken by another group's work in progress | 0; 0 | v0.2 | — | — |
 | H-8 | Tasks blocked on a shared-zone (hub) file | 0 | v0.2 | — | — |
@@ -86,7 +86,7 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | --- | --- | --- | --- | --- |
 | P0 | Inputs decided, repository scaffolded, extension loads in Pi | — | G0 | ✅ [G0](../reports/gates/G0.md) |
 | v0.0 | Baseline numbers and a fitted cost model | P0 | G0.0 | ✅ |
-| v0.05 | Prove the main bet by hand before building infrastructure | v0.0 | G0.05 (go / no-go) | ⬜ |
+| v0.05 | Prove the main bet by hand before building infrastructure | v0.0 | G0.05 (go / no-go) | ✅ GO [G0.05](../reports/gates/v0.05.md) |
 | v0.1 | One group, in-process, request → accepted; small tasks cheap | v0.05 = GO | G0.1 | ⬜ |
 | v0.2 | Several groups in parallel; hits the large-parallel targets | v0.1 | G0.2 | ⬜ |
 | v0.3 | Lanes (parallelism inside a group) and variants | v0.2 | G0.3 | ⬜ |
@@ -136,7 +136,7 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | R.05.2 | Relay script: one orchestrator session and two `pi --mode rpc` workers in two worktrees; the script relays dispatch and Reports and merges at the end | `bench/dryrun.ts` | ✅ | `bench/dryrun.ts`, `extensions/rsa-relay-tools` |
 | R.05.3 | Run ≥ 4 large parallel tasks, N = 3 | Runs metered as in v0.0 | ✅ | 4 tasks × N = 3, 12/12 accepted, $23.48 |
 | R.05.4 | Fit g\_w and per-Report, per-brief overhead; update the cost model | Cost model v1 | ✅ | g_w ≈ g, P_w ≈ P; orchestrator ≈ $0.25/run; 20% saving needs n ≈ 150 (report 002) |
-| R.05.5 | Dry-run report and go / no-go decision | `reports/gates/v0.05.md`, D-n | 🟨 | report `reports/bench/002-dryrun.md`; decision pending (user) |
+| R.05.5 | Dry-run report and go / no-go decision | `reports/gates/v0.05.md`, D-n | ✅ | GO on time (63%) with prompts v1: `reports/gates/v0.05.md` |
 
 Time is measured as the critical path of model and tool time; relay latency counts as zero and is noted.
 
@@ -506,3 +506,10 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Found: editing parallelises (worker 143 s vs baseline 373 s to the last edit), but every worker verifies its own part with slow suites (contract rule 4), and the splits follow unequal task parts. If balanced, the time ratio would be 71%.
 - Found: cost savings come out as designed (reads −$0.23, realctx −$0.13) but are cancelled by duplicated prefix writes (+$0.20) and output (+$0.13). The model puts a 20% saving at n ≈ 150 calls per session.
 - Decided: D-26 (prompts v1: verification placement + balanced split; re-run 12; budget guard $120).
+
+### 2026-11-10 — v0.05 (prompts v1, gate)
+- Done: 12 `rsav1` runs, 12/12 accepted without rescores. Median cost 89%, time 63% → **G0.05 GO on time** (`reports/bench/003-dryrun-v1.md`, `reports/gates/v0.05.md`).
+- Found: verification placement shortened the parallel phase (224 → 154 s) and the tail (88 → 51 s); the orchestrator's single check grew 29 → 42 s. The orchestrator rebalanced by file inside a package when needed. Large tasks gain most (orca, wsl: ~50% time, 67–78% cost).
+- Found: H-3 48% (fixed split and check are a larger share of shorter runs); H-5 at its limit (15%).
+- Spend: $109.01 of $215 (D-27).
+- Next: v0.1 (one group in-process, request → accepted), starting from prompts v1. Design doc updates from G0.05: escalate on expected time gain; verification placement (§14); balanced partitioning (§8).
