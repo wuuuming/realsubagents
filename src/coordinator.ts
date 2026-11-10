@@ -13,7 +13,7 @@
  * orchestrator. One coordinator per project holds a lease; Pi, Git and the message channel are
  * injected, so this module is testable without a model.
  */
-import { existsSync, readdirSync } from "node:fs";
+import { existsSync, readdirSync, rmdirSync } from "node:fs";
 import { hostname } from "node:os";
 import { join } from "node:path";
 import { WorkerProcess, type WorkerReport } from "./runtime/worker.ts";
@@ -135,7 +135,9 @@ export class Coordinator {
 
 	private stamp(): string {
 		const t = this.task;
-		return t ? `elapsed ${Math.round((Date.now() - t.createdAt) / 1000)}s` : "";
+		// The time signal lives in relay messages only, never in the always-on prompt section, so a
+		// session that does not split gets no instruction the baseline lacks (GUIDANCE.md fairness).
+		return t ? `elapsed ${Math.round((Date.now() - t.createdAt) / 1000)}s; time matters, so avoid steps that are not needed` : "";
 	}
 
 	private treeOf(name: string): string {
@@ -220,6 +222,13 @@ export class Coordinator {
 			if (w.tree && existsSync(w.tree)) await removeTree(this.d.root, w.tree, this.d.setup, w.branch).catch((e) => this.d.log(`remove ${w.tree}: ${e}`));
 			if (w.state !== "stopped") this.d.store.append({ type: "worker.stopped", task: id, actor: "orchestrator", data: { worker: w.name, reason: "finished" } });
 		}
+		// Empty task and project directories (only ever empty ones: rmdir refuses anything else).
+		for (const d of [join(this.d.home, "worktrees", this.d.project, id), join(this.d.home, "worktrees", this.d.project)])
+			try {
+				rmdirSync(d);
+			} catch {
+				// not empty, or already gone
+			}
 		this.d.store.append({ type: "task.finished", task: id, actor: "orchestrator", data: { outcome, summary } });
 		this.taskId = undefined;
 		this.dropLease();

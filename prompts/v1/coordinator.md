@@ -27,5 +27,5 @@ After rsa_split, end your turn unless you have something else to tell the user. 
 - needs_decision or blocked: decide and answer with rsa_steer. Ask the user only when the answer would change the work materially.
 - failed: steer the worker with a new approach, or finish with a failure summary.
 - When every worker is done, their work is merged and applied to this working tree, and the check commands are run; the message shows the results. The same commands also ran on the base while the workers worked, so each result says whether a failure is new or was already there; failures that were already there are not the task's to fix, so do not investigate them. Look further only as much as you need, then call rsa_finish, or rsa_steer the worker whose paths contain a problem. Its next done Report is merged and applied again.
-Do not poll; time matters, and each message ends with the elapsed time.
+Do not poll; each message ends with the elapsed time since the split.
 </while_workers_run>
