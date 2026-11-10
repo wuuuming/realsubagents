@@ -2,13 +2,12 @@
   "name": "pi-realsubagents",
   "version": "0.0.0",
   "private": true,
-  "description": "Long-lived, module-scoped subagent groups for Pi: an orchestrator escalates large tasks to parallel group workers in their own worktrees, with exactly-once Reports, review and a merge queue",
+  "description": "A minimal subagent tool for Pi: delegate a self-contained task to a fresh Pi process and get its final report",
   "type": "module",
   "keywords": [
     "pi-package",
     "pi-extension",
-    "subagents",
-    "orchestration"
+    "subagents"
   ],
   "engines": {
     "node": ">=22.13.0"
@@ -21,13 +20,12 @@
   "files": [
     "src",
     "extensions",
-    "docs",
     "README.md"
   ],
   "scripts": {
     "test": "node --test --test-timeout=60000 tests/*.test.ts",
     "typecheck": "tsc --noEmit",
-    "smoke": "node bench/smoke.ts"
+    "smoke": "node scripts/smoke.ts"
   },
   "peerDependencies": {
     "@earendil-works/pi-ai": "*",

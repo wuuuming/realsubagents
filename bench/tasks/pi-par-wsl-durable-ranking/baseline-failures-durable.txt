@@ -1,8 +1,0 @@
-# Failures of the reference solution (6454d07ec + c7372af42) at 2026-11-09; written by run.ts --mode reference --write-baseline
-packages/durable/test/env-node.test.ts::NodeExecutionEnv filesystem lists symlinks as symlinks
-packages/durable/test/env-node.test.ts::NodeExecutionEnv filesystem returns fileInfo for files, directories, and symlinks without following symlinks
-packages/durable/test/harness-view-run.test.ts::streamed partials streams a tool-call partial as appends at its argument paths
-packages/durable/test/system-order-cache-e2e.test.ts::Durable system message order e2e keeps the prompt cache across a tool change only when the system message leads
-packages/durable/test/tools.test.ts::durable tools edit edits regular files through symlinks
-packages/durable/test/tools.test.ts::durable tools edit serializes a new file created through a symlinked directory with its canonical path
-packages/durable/test/tools.test.ts::durable tools edit serializes concurrent edits through canonical and symlink paths

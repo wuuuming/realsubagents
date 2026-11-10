@@ -23,6 +23,6 @@
     "src",
     "extensions",
     "tests",
-    "bench"
+    "scripts"
   ]
 }

@@ -1,12 +1,15 @@
 # realsubagents
 
-Parallel worker agents for [Pi](https://github.com/earendil-works/pi). You work with Pi as usual; when a task has two or three separable parts of comparable size, Pi can call `rsa_split` to hand them to worker agents. Each worker runs in its own seeded git worktree. Their work is merged with `git merge-tree` and applied to your working tree, and the check commands run once on the merged result.
+A minimal subagent tool for [Pi](https://github.com/earendil-works/pi). It adds one tool, `subagent`, which hands a task to a fresh Pi process and returns that process's final message.
 
-**Status: v0.1 (split runtime) in progress.** In the manual dry run, two workers finished large parallel tasks in 63% of a single session's time at 89% of its cost (`reports/gates/v0.05.md`). Splitting buys time, not money, so small tasks stay direct.
+That is all it does:
 
-- Design: [docs/design.md](docs/design.md) (rev 2.2; §0 summarises what the data changed)
-- Route, metrics and status log: [docs/route.md](docs/route.md)
-- Architecture review after the dry run: [reports/review-2026-11-10.md](reports/review-2026-11-10.md)
+- **Delegation only.** The call blocks until the subagent finishes. You cannot steer it mid-run, it sends no messages, and it keeps no state. Pressing Esc aborts it and kills its process tree.
+- **No reuse.** Every call starts a new process with `--no-session`.
+- **No nesting.** Subagents run with `RSA_SUBAGENT=1`, so this extension registers nothing inside them.
+- **No policy.** The extension never decides whether a task is worth delegating, how to split it, or how many subagents to run. The user or the main agent decides that, because tasks differ in type and scale.
+
+A subagent runs in the main agent's working directory, on the same model and thinking level. It loads your configured extensions and gets none of the conversation, so the `task` must be self-contained. If one message contains several `subagent` calls, they run in parallel, because Pi runs tool calls in parallel. Give parallel subagents work that does not write the same files. The subagents' token usage is added to the main session's totals.
 
 ## Use
 
@@ -14,37 +17,23 @@ Parallel worker agents for [Pi](https://github.com/earendil-works/pi). You work 
 pi -e ./extensions/realsubagents/index.ts
 ```
 
-- Tools: `rsa_split` (always), plus `rsa_steer` and `rsa_finish` while a task is open. Worker Reports arrive as messages. `/rsa` shows the status.
-- An open task survives a restart of Pi: workers are resumed with their sessions.
-- State, worker trees and worker sessions live in `~/.pi/agent/realsubagents/` (override with `RSA_HOME`).
-- Worker trees: dependencies and build outputs are hard-linked from your tree (npm and Cargo are detected). Configure links, copies and prepare commands in `<repo>/.pi/rsa.json`:
-
-```json
-{ "trees": { "link": ["native"], "copy": [".env"], "seed": "auto", "prepare": ["npm run build"] } }
-```
+Set `RSA_PI_CLI` to point at a specific Pi `cli.js`, or `RSA_PI_VERSION` to pick an installed managed release. If neither is set, the current managed install is used.
 
 ## Development
 
-Requires Node ≥ 22.13 (TypeScript runs natively, no build step) and Pi 1.5.x, with git ≥ 2.38 (`merge-tree --write-tree`).
+Requires Node ≥ 22.13 and Pi 1.5.x. TypeScript runs natively, so there is no build step.
 
 ```bash
 npm install
 npm run typecheck
-npm test
-npm run smoke     # starts a real Pi in RPC mode with only this extension and runs /rsa
-pi -e ./extensions/realsubagents/index.ts   # try it interactively
+npm test          # uses a fake Pi CLI (tests/fixtures/fake-pi.mjs), no model calls
+npm run smoke     # live: a real Pi calls subagent, which writes a file (a few cents)
 ```
-
-Set `RSA_PI_CLI` to a Pi `cli.js`, or `RSA_PI_VERSION` to an installed managed release, to test against another Pi. The benchmark pins Pi, realctx and realtasks (`bench/pins.json`; pinned exports via `bench/pin-ext.sh`).
-
-## Layout
 
 | Path | Contents |
 | --- | --- |
-| `extensions/realsubagents/` | Pi extension entry |
-| `src/` | Implementation |
-| `tests/` | `node --test` tests |
-| `bench/` | Benchmark task set, runner, meter, smoke test |
-| `prompts/` | Versioned prompts with their evaluations |
-| `reports/` | Benchmark, gate and tuning reports |
-| `docs/` | Design doc and route |
+| `extensions/realsubagents/index.ts` | The `subagent` tool |
+| `src/subagent.ts` | Runs one `pi --mode json --no-session` child and collects its result |
+| `src/pi-cli.ts` | Finds the Pi CLI so children start as `node <cli.js>` (no launcher, works on Windows) |
+
+The earlier design, which had parallel workers in seeded worktrees, merge, checks, steering, resume and the benchmark, is preserved at git tag `split-runtime-v0.1`.

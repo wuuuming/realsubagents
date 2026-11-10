@@ -1,6 +1,6 @@
 /**
  * Locate the Pi CLI entry script, so child Pi processes can be started as `node <cli.js> ...`
- * directly: one process per member (PID re-adoption, design doc §16), no shell, works on Windows.
+ * directly: one process per subagent (not the launcher's two), no shell, works on Windows.
  *
  * Order: RSA_PI_CLI env override → the managed install (~/.pi/agent/install/current-version)
  * → the locally installed @earendil-works/pi-coding-agent package.
