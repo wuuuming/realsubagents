@@ -1,6 +1,16 @@
 # realsubagents: Design Doc v1
 
-Nov 9, 2026 · @StackWu · rev 2: fixes for the five critical review issues (cost metric, escalation by observation, per-group worktrees and shared patches, lanes and scouts, shorter critical path) · rev 2.1: realctx settings v3 (prompt-cache rules §15, cost-model fit §15.1, two realctx changes §17.1; route D-23)
+Nov 9, 2026 · @StackWu · **rev 2.2 (2026-11-10, route D-28): goals restated from v0.05 data; v1 scope narrowed to the split runtime, see §0** · rev 2: fixes for the five critical review issues (cost metric, escalation by observation, per-group worktrees and shared patches, lanes and scouts, shorter critical path) · rev 2.1: realctx settings v3 (prompt-cache rules §15, cost-model fit §15.1, two realctx changes §17.1; route D-23)
+
+## 0. Status after the v0.05 dry run (rev 2.2)
+
+The v0.0 baseline and the v0.05 dry run (`reports/bench/001`–`003`, `reports/review-2026-11-10.md`) measured the main bet. Splitting a large parallel task across two workers cut wall-clock time to 63% of a single session (about 50% on 10–12 min tasks) but not cost (89%): cache reads cost 1/25 of cache writes, so halving the quadratic read term saves about what an extra session costs to set up. Workers did not grow slower than a single session (g\_w ≈ g), and the orchestrator split all 24 runs correctly without a Partitioner or G0.
+
+Consequences for v1:
+- **Goals** (§1): large parallel tasks target time ≤ 75% (k = 2) with cost ≤ 100%. Cost savings are a hypothesis for very long sessions (n ≳ 150 calls), tested in v0.3.
+- **Escalation** (§7.2) triggers on expected time gain: at least two separable parts of comparable size, and an expected single-session duration of about 6 minutes or more.
+- **Verification** (§14): workers run the targeted tests of their part; the full checks run once, on the merged result, by code.
+- **Scope of v1** is the *split runtime*: disposable workers in seeded worktrees, merged with `git merge-tree` and landed into the user's tree. Long-lived groups, G0, the Partitioner, contracts and the shared zone, merge trains, semif judges and regrouping (§3–§14) stay in this document as the long-term design, but are built only where later data shows the need (route v0.4).
 
 ## 1. Goals
 
@@ -10,7 +20,7 @@ realsubagents is a Pi extension that runs one orchestrator over a small set of l
 | --- | --- | --- | --- |
 | Small task | Never escalated; the orchestrator completes it directly | Extra cost (USD) vs. a single session | ≤ +10% (design target +3%) |
 | Large task, parallel | Escalated and split across ≥ 2 groups or ≥ 2 lanes (§7.4) | Wall-clock time | k\_eff = 2: ≤ 75%; k\_eff ≥ 3: ≤ 60% of a single session |
-| Large task, parallel | Same | Cost (USD) | ≤ 80% of a single session |
+| Large task, parallel | Same | Cost (USD) | ≤ 100% of a single session (rev 2.2; ≤ 80% only as a hypothesis for n ≳ 150 calls) |
 | Large task, serial | Escalated, but its atoms do not split into ≥ 2 lanes | Cost; wall-clock time | ≤ 105%; no worse than a single session (no-regression target) |
 
 k\_eff is the number of subtasks or lanes running concurrently on the critical path. A single-lane large task has no parallelism, so it can only win through scouts and module-scoped context (§7.5); v1 promises no regression for it, not a speed-up.

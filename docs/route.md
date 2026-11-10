@@ -77,7 +77,7 @@ P0 Prep ──► v0.0 Benchmark + cost model ──► v0.05 Manual dry run ─
                                                                      │
         ┌────────────────────────────────────────────────────────────┘
         ▼
-      v0.1 Skeleton ──► v0.2 Parallel ──► v0.3 Lanes + variants ──► v0.4 Regrouping ──► Later: Multica
+      v0.1 Split runtime ──► v0.2 Robustness ──► v0.3 Long tasks ──► v0.4 Deferred mechanisms (if data needs them) ──► Later: Multica
 
 Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D Design debt
 ```
@@ -87,10 +87,10 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | P0 | Inputs decided, repository scaffolded, extension loads in Pi | — | G0 | ✅ [G0](../reports/gates/G0.md) |
 | v0.0 | Baseline numbers and a fitted cost model | P0 | G0.0 | ✅ |
 | v0.05 | Prove the main bet by hand before building infrastructure | v0.0 | G0.05 (go / no-go) | ✅ GO [G0.05](../reports/gates/v0.05.md) |
-| v0.1 | One group, in-process, request → accepted; small tasks cheap | v0.05 = GO | G0.1 | ⬜ |
-| v0.2 | Several groups in parallel; hits the large-parallel targets | v0.1 | G0.2 | ⬜ |
-| v0.3 | Lanes (parallelism inside a group) and variants | v0.2 | G0.3 | ⬜ |
-| v0.4 | Split, merge, migrate, retire | v0.3 | G0.4 | ⬜ |
+| v0.1 | Split runtime: the proven v0.05 loop as a real extension (D-28) | v0.05 = GO | G0.1 | ⬜ |
+| v0.2 | Robustness: watchdog, scope guard, k = 3, shorter serial parts | v0.1 | G0.2 | ⬜ |
+| v0.3 | Long tasks: lanes, scouts, the cost hypothesis (n ≳ 150 calls) | v0.2 | G0.3 | ⬜ |
+| v0.4 | Deferred mechanisms, only where data shows a need: long-lived groups, G0, Partitioner, contracts and shared zone, merge trains, semif judges, regrouping | v0.3 | G0.4 | ⏸ |
 | Later | Run under Multica | v0.4 | — | ⏸ |
 
 ---
@@ -143,70 +143,51 @@ Time is measured as the critical path of model and tool time; relay latency coun
 **G0.05:** median ≤ 80% cost **or** ≤ 75% time at k = 2.
 **If NO-GO, pivot options:** (a) keep only scouts plus lanes in a single session; (b) ship scouts alone as a small extension; (c) stop and write up. The choice is recorded as D-n.
 
-### v0.1 — Skeleton
+### v0.1 — Split runtime (D-28)
 
-**Objective:** one group, in-process: a real request goes to accepted, survives a kill, and small tasks stay cheap.
-
-| ID | Item | Deliverable | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| R1.1 | StateStore: `node:sqlite` (as realctx uses), WAL, lease lock, events + projections in one transaction, consumer cursors, forward-only migrations | `src/store/` with tests | ⬜ | |
-| R1.2 | Event catalog subset for v0.1; projections; `/rsa rebuild` | Replay test: rebuilt state = live state | ⬜ | |
-| R1.3 | GroupRuntime `inProcess`: SDK sessions with per-session role options | `src/runtime/inprocess.ts` | ⬜ | |
-| R1.4 | Dispatcher: create, dispatch, steer, resume, cancel, escalate | Precondition tests | ⬜ | |
-| R1.5 | ReportBus: exactly-once latch, 300 ms coalescing, wake / passive / silent delivery | Delivery tests | ⬜ | |
-| R1.6 | EscalationMonitor, `rsa_escalate`, `setActiveTools` tool surface, escalation hint, historian brief | Small-task overhead measured | ⬜ | |
-| R1.7 | Member role: Heartbeat, `rsa_report`, `rsa_ask`, member prompt | | ⬜ | |
-| R1.8 | Scouts: `rsa_scout` on the cheap model, findings with references | H-11 measured | ⬜ | |
-| R1.9 | ReviewPipeline v1: tests in a review worktree plus the completion judge (realctx `SemIfClient`, `src/api.ts`) | H-6 measured | ⬜ | |
-| R1.10 | Crash and restart: kill `pi` mid-task, rebuild, resume (fixes DD-1) | H-10 test | ⬜ | |
-| R1.11 | Prompts v1: PR-1, PR-2, PR-3, PR-8 (review reject), PR-9, PR-10, PR-11 | `prompts/v1/` with evaluations | ⬜ | |
-| R1.12 | `/rsa` panel and dock (minimal) | | ⬜ | |
-| R1.13 | Benchmark: all small tasks plus the large serial tasks | `reports/bench/00x-v0.1.md` | ⬜ | |
-
-**G0.1:** a real request reaches accepted end-to-end and survives killing `pi`; M-1 ≤ +10%; H-4a and H-4b logged; H-10 = 100%; all tests green.
-
-### v0.2 — Parallel
-
-**Objective:** several groups as processes, in their own trees, hitting the large-parallel targets.
+**Objective:** the loop that passed G0.05 (split → disposable workers in seeded worktrees → targeted tests → one integration check → land) as a real extension in the user's Pi session, durable across a kill. The earlier v0.1–v0.4 plan (one in-process group, G0, Partitioner, contracts, merge trains, regrouping) is kept in git history (`16e6926`) and deferred to v0.4.
 
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| R2.1 | Partitioner: atoms (npm/pnpm workspaces and Cargo first, directories as fallback), co-change and static edges, clustering, choice of k; G0 review (PR-12); `rsa_map_write`; `/rsa bootstrap` | Partitions of the benchmark repositories | ⬜ | |
-| R2.2 | GroupRuntime `subprocess` (`pi --mode rpc`), re-adoption by PID and start time | Kill test per group | ⬜ | |
-| R2.3 | SandboxManager: worktrees, copy-on-write detection (Dev Drive), shared caches, sync at task boundaries plus the changed-paths steer (PR-8) | | ⬜ | |
-| R2.4 | ScopeGuard: three-way write classification, shared patches, case-insensitive Windows path matching (W-5) | H-7 | ⬜ | |
-| R2.5 | MergeQueue: merge train, bisection, shared-patch rules (npm/pnpm first), `/rsa land` | H-9 | ⬜ | |
-| R2.6 | Watchdog | Alert tests | ⬜ | |
-| R2.7 | Pipelined review; affected-test selection | | ⬜ | |
-| R2.8 | G0 cross-group work: on-demand consults (PR-13), plan and stubs (PR-14), approval policy, parent tasks, integration review | H-3 | ⬜ | |
-| R2.9 | Build queue with a concurrency cap (U-9 or local semaphore) | | ⬜ | |
-| R2.10 | Judges: scope and merge risk (PR-15) | | ⬜ | |
-| R2.11 | Benchmark: all large parallel tasks | `reports/bench/00x-v0.2.md` | ⬜ | |
+| R1.1 | State store: SQLite WAL, events + projections in one transaction, replay, exactly-once report claim, leases, forward-only migrations | `src/store/` | ✅ | `tests/store.test.ts` |
+| R1.2 | Runtime shared by the bench and the extension: shell helpers, leftover-process cleanup, tree seeding, worker process (`pi --mode rpc`) | `src/runtime/` | ⬜ | |
+| R1.3 | Snapshot of the user's tree (tracked + untracked, via a temporary index) as the task's base; worker worktrees on `rsa/<task>/<worker>` with the project's tree setup | `src/runtime/trees.ts` | ⬜ | |
+| R1.4 | Coordinator: `rsa_split`, `rsa_steer`, `rsa_finish`; Reports delivered as follow-up messages, exactly once (session scan on resume) | `src/coordinator.ts` | ⬜ | |
+| R1.5 | Integration by code: `git merge-tree` of the workers' commits, incremental landing into the user's tree, check commands run by code and reported | | ⬜ | |
+| R1.6 | Worker role in the same extension (`RSA_ROLE=worker`): `rsa_report`, worker contract (prompts v1) | | ⬜ | |
+| R1.7 | Kill and resume: lease, restart workers with `--continue`, deliver pending Reports (H-10) | Kill test | ⬜ | |
+| R1.8 | Orchestrator prompt section with the time-gain escalation rule; tool surface (`rsa_steer`, `rsa_finish` active only while a task is open) | `prompts/v1/coordinator.md` | ⬜ | |
+| R1.9 | Task budget (USD) from worker usage; leftover cleanup on finish | | ⬜ | |
+| R1.10 | `/rsa` status | | ⬜ | |
+| R1.11 | Bench arm `ext`: the 4 large-parallel tasks (N = 3) and the 6 small tasks (N = 1) through the real extension | `reports/bench/004-v0.1.md` | ⬜ | |
 
-**G0.2:** three groups work in parallel; H-7 = 0 / 0; H-8 = 0; M-2, M-3 and M-4 met; H-3 < 25%.
+**G0.1:** through the extension, large-parallel median time ≤ 75% and cost ≤ 100% of the baseline; small tasks within +10% cost (design target +3%); the kill/resume test passes; all tests green.
 
-### v0.3 — Lanes and variants
+### v0.2 — Robustness
 
-| ID | Item | Deliverable | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| R3.1 | Lane candidates (Partitioner); `rsa_lane_plan` (PR-16) | | ⬜ | |
-| R3.2 | Fork into n sessions. Pi's `fork` replaces the active session, so copy session files and open n sessions | `GroupRuntime.fork` | ⬜ | |
-| R3.3 | Lane worktrees, lane review, parent join | | ⬜ | |
-| R3.4 | Variants: one worktree per variant; judging by tests, then semif; ties go to the user | | ⬜ | |
-| R3.5 | Benchmark: large serial tasks plus the lane-splittable subset | | ⬜ | |
+| ID | Item | Status |
+| --- | --- | --- |
+| R2.1 | Watchdog: stall, loop, budget (deterministic) | ⬜ |
+| R2.2 | Scope guard: block worker writes outside its paths (case-insensitive on Windows, W-5); diff check at integration | ⬜ |
+| R2.3 | k = 3 and a task queue (a second request while one is integrating) | ⬜ |
+| R2.4 | Shorter serial parts (H-3): deterministic repo outline for the split; Report length enforced by schema | ⬜ |
+| R2.5 | Benchmark: large-parallel tasks at k = 2 and 3 | ⬜ |
 
-**G0.3:** M-5 met; lane-split tasks meet M-2 or M-3 and M-4; one full two-variant decision completes.
+**G0.2:** H-3 < 35% on the large-parallel tasks; no write outside a worker's paths reaches the user's tree; one k = 3 task completes.
 
-### v0.4 — Regrouping
+### v0.3 — Long tasks
 
-| ID | Item | Deliverable | Status | Evidence |
-| --- | --- | --- | --- | --- |
-| R4.1 | Split and merge (historian merge brief, PR-17) | | ⬜ | |
-| R4.2 | Migrate (realctx `paths.autoRename`) and retire | | ⬜ | |
-| R4.3 | Re-partition triggered by the cross-group task rate | | ⬜ | |
-| R4.4 | Reversal test: undo every regroup operation | | ⬜ | |
+| ID | Item | Status |
+| --- | --- | --- |
+| R3.1 | Lanes inside one part (fork a worker after it has explored) | ⬜ |
+| R3.2 | Scouts on a cheap model | ⬜ |
+| R3.3 | Long tasks (n ≳ 150 calls) to test the cost hypothesis | ⬜ |
 
-**G0.4:** a regroup loses no memory or journal entries, and every regroup can be reversed.
+**G0.3:** cost ≤ 80% on long tasks, or the cost goal is dropped from v1 (recorded as D-n).
+
+### v0.4 — Deferred mechanisms
+
+Long-lived groups, G0, Partitioner, contracts and the shared zone, merge trains, semif judges and regrouping (design §3–§14) come back only with data showing the need, for example repeated tasks in one module where a warm worker pays, or frequent conflicts on shared files.
 
 ---
 
@@ -359,7 +340,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-25 | 2026-11-10 | H-1 is measured per class: the sum of held-out predictions vs. measured spend must be within ±15% for every class; the median per-task error is reported next to the noise floor (within-task CV). Reason: the model is used per class (§7.2 threshold, §15 arm comparison), and per-task error at N = 2–3 is bounded below by run-to-run noise (12% median, 34% max). | `reports/bench/001-baseline.md` |
 | D-26 | 2026-11-10 | G0.05 not passed with prompts v0. The user chose one iteration on time: prompts v1 (`prompts/v1/`, arm `rsav1`) move the repo-wide checks from each worker to one run by the orchestrator on the merged tree (§14 verification placement; total verification equals the baseline's single final check) and balance the split by expected work (§8 Partitioner). The 12 runs (4 large-parallel tasks × N = 3) are repeated and judged by the same G0.05 rule. Phase budget guard raised to $120 (expected spend ≈ $113; the margin covers the per-run cap of $5). | user, 2026-11-10 |
 | D-27 | 2026-11-10 | Project budget cap: **$215 in total** for all benchmark spend in the repository (all phases, pilots and failed runs included), set by the user. v0.0 + v0.05 stay within the D-26 guard of $120; the rest (≥ $95) is for v0.1–v0.4. Plan: measure cost and time fully once (v0.2); v0.1, v0.3 and v0.4 check mainly function, plus small targeted runs. The baseline is reused while the model, Pi and realctx pins are unchanged. `bench/ledger.ts` sums spend across all phases. | user, 2026-11-10 |
-| D-28 | 2026-11-10 | **Proposed, awaiting user.** Re-sequence after the G0.05 evidence (`reports/review-2026-11-10.md`): v0.1 becomes the *split runtime*: the proven v0.05 loop as a real extension (k disposable worker subprocesses in seeded worktrees, Reports as messages, merge + integration check by code, durable SQLite state, kill/resume). Long-lived groups, G0, Partitioner, contracts, shared zone, merge trains and semif judges are deferred to v0.4+ unless data shows a need. Goals restated: large parallel time ≤ 75% (k = 2) and cost ≤ 100%; cost savings stay a hypothesis for n ≳ 150 calls. | `reports/review-2026-11-10.md` |
+| D-28 | 2026-11-10 | **Accepted by the user.** Re-sequence after the G0.05 evidence (`reports/review-2026-11-10.md`): v0.1 becomes the *split runtime*: the proven v0.05 loop as a real extension (k disposable worker subprocesses in seeded worktrees, Reports as messages, merge + integration check by code, durable SQLite state, kill/resume). Long-lived groups, G0, Partitioner, contracts, shared zone, merge trains and semif judges are deferred to v0.4+ unless data shows a need. Goals restated: large parallel time ≤ 75% (k = 2) and cost ≤ 100%; cost savings stay a hypothesis for n ≳ 150 calls. | `reports/review-2026-11-10.md` |
 
 ### 7.2 Open inputs (needed before or during P0)
 
@@ -518,3 +499,4 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 ### 2026-11-10 — architecture review
 - Done: review of the design against v0.0/v0.05 data (`reports/review-2026-11-10.md`). Main points: time is the product, cost is parity; the proven loop is short-lived split → seeded worktrees → targeted tests → one integration check; most of the design's mechanisms are unproven at this scale. Proposed D-28 (re-sequence v0.1 as the split runtime).
 - Started (no-regret under either order): `src/store/` state store, `src/runtime/` worker runtime and tree manager extracted from the bench.
+- Decided: D-28 accepted by the user. Route §2–§3 rewritten: v0.1 split runtime, v0.2 robustness, v0.3 long tasks, v0.4 deferred mechanisms. Design doc §1 goals updated (rev 2.2).
