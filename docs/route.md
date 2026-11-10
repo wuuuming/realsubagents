@@ -55,7 +55,7 @@ The design doc says *what* to build. This route says *in what order*, *how each 
 
 | ID | Metric | Initial target | First measured | Latest | Source |
 | --- | --- | --- | --- | --- | --- |
-| H-1 | Cost-model prediction error (held-out tasks) | within ±15% | v0.0 | per task: median 23.6% (6/13 within); per class aggregate: −0.7% / −2.6% / +0.2%; noise floor (within-task CV) 12% | ❌ as written, ✅ under proposed D-25 |
+| H-1 | Cost-model prediction error (held-out, per-class aggregate; D-25) | within ±15% | v0.0 | per task: median 23.6% (6/13 within); per class aggregate: −0.7% / −2.6% / +0.2%; noise floor (within-task CV) 12% | ✅ (D-25) |
 | H-2 | Prompt-cache hit rate (cache read ÷ total input), per role | ≥ 90% | v0.0 | — | — |
 | H-3 | Serial fraction of parallel runs | < 25% | v0.05 | — | — |
 | H-4a | Missed escalations (direct tasks that compacted or passed break-even) | ≤ 10% | v0.1 | — | — |
@@ -85,7 +85,7 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | Phase | Objective | Depends on | Gate | Status |
 | --- | --- | --- | --- | --- |
 | P0 | Inputs decided, repository scaffolded, extension loads in Pi | — | G0 | ✅ [G0](../reports/gates/G0.md) |
-| v0.0 | Baseline numbers and a fitted cost model | P0 | G0.0 | 🟨 |
+| v0.0 | Baseline numbers and a fitted cost model | P0 | G0.0 | ✅ |
 | v0.05 | Prove the main bet by hand before building infrastructure | v0.0 | G0.05 (go / no-go) | ⬜ |
 | v0.1 | One group, in-process, request → accepted; small tasks cheap | v0.05 = GO | G0.1 | ⬜ |
 | v0.2 | Several groups in parallel; hits the large-parallel targets | v0.1 | G0.2 | ⬜ |
@@ -124,7 +124,7 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 | R0.0.6 | Cost model: implementation and fitting (P, g, Δ, O per class; cold-restart rate); held-out error | `src/costmodel.ts`, `bench/fit.ts` | ✅ | 32 runs; prices recovered from traces; prefix growth R² median 0.92; fit in `reports/bench/fit-v0.0.json` |
 | R0.0.7 | Benchmark report #1 (baseline) | `reports/bench/001-baseline.md` | ✅ | 32/32 accepted, $50.19 |
 
-**G0.0:** every task has its N baseline runs (D-21) with spread reported; total spend ≤ $100; H-1 within ±15% on held-out tasks.
+**G0.0:** every task has its N baseline runs (D-21) with spread reported; total spend ≤ $100; H-1 within ±15% on held-out tasks, measured per class (D-25).
 
 ### v0.05 — Manual dry run (go / no-go)
 
@@ -356,7 +356,7 @@ Change **one knob at a time**, run the relevant benchmark subset (N = 3), and wr
 | D-22 | 2026-11-09 | Task set sources. pi gives 5 small, 2 large serial and all 4 large parallel tasks; BiliNova gives 1 small (`2667a4b`) and 1 large serial (`f07e0d0`). BiliNova's history after the 07-26 checkpoint has few commits with tests that fail at their parent, and the rest need a GPU (`5dba678`) or are tests without a source change (`9e0dcdd`). `bilinova-audio-source-factory` is accepted on its factory contract tests only; its session refactor is checked by the regression suite alone, so its pass rate says less than the others'. Large parallel tasks are composites (D-19 `parts`) of independent historical fixes in different packages, on a common base that every part's diff applies to; `CHANGELOG.md` files are left out of every reference diff because they make parts conflict and are not part of a task | R0.0.1 |
 | D-23 | 2026-11-09 | realctx settings schema v3 (upstream `90b356c`): on load, a config older than v3 has its Context and History sections reset to new defaults (protect 24 turns, apply at 40% with no ceiling, history at 30%, emergency 80%, no size floors) and the cache lifetime is resolved per model, with an optional daily fetch from models.dev. Benchmark: realctx pinned to `90b356c` in `bench/pins.json` (the runner refuses agent runs on another commit unless `RSA_ALLOW_DRIFT=1`); the per-run config takes only endpoints and models from the user's config, sets `version: 3`, uses v3 defaults for Context and History, turns `cacheTtlAuto` off and sets a 5 m lifetime for the session model, so runs neither depend on the user's settings nor on the network. The pilot ran on `12f7cad` with the user's v2 settings (apply at 65%, protect 4 turns) and is not pooled with the baselines. Design rev 2.1 (§15, §15.1, §17.1) | R0.0.2 |
 | D-24 | 2026-11-09 | Supersedes D-20 (user's choice). realctx's own model calls in benchmark runs (`rewriteModel`, `history.model`) are left empty, so they use the session model, as in the user's own setup (the user does not want haiku as historian). `RSA_REALCTX_MODEL` still overrides. Costs more per run; the meter shows these calls under caller `realctx` | user, 2026-11-09 |
-| D-25 | 2026-11-10 | **Proposed, awaiting user.** H-1 is measured per class: the sum of held-out predictions vs. measured spend must be within ±15% for every class; the median per-task error is reported next to the noise floor (within-task CV). Reason: the model is used per class (§7.2 threshold, §15 arm comparison), and per-task error at N = 2–3 is bounded below by run-to-run noise (12% median, 34% max). | `reports/bench/001-baseline.md` |
+| D-25 | 2026-11-10 | H-1 is measured per class: the sum of held-out predictions vs. measured spend must be within ±15% for every class; the median per-task error is reported next to the noise floor (within-task CV). Reason: the model is used per class (§7.2 threshold, §15 arm comparison), and per-task error at N = 2–3 is bounded below by run-to-run noise (12% median, 34% max). | `reports/bench/001-baseline.md` |
 
 ### 7.2 Open inputs (needed before or during P0)
 
@@ -482,4 +482,5 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Fixed: leftover processes. Pi's background tasks outlive Pi on Windows; the runner now kills them, and any process that mentions the run dir, before acceptance (`killLeftovers` in `bench/sh.ts`, `result.leftoverProcesses`). Tested on synthetic processes; first use will be in v0.05.
 - Done: R0.0.5, R0.0.6 (`src/costmodel.ts`, `bench/fit.ts`, 4 unit tests), R0.0.7.
 - Found: H-1 fails per task (median 23.6%) but holds per class (within ±3%). Per-task error is bounded by noise (within-task CV 12%) and task-specific P and output style. Proposed D-25.
-- Next: user decision on D-25 → G0.0 gate report → v0.05.
+- Decided: D-25 accepted by the user.
+- Done: G0.0 passed (`reports/gates/G0.0.md`). v0.05 starts with $41.55 left.
