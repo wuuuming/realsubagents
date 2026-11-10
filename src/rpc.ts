@@ -16,6 +16,8 @@ export interface RpcOptions {
 	/** Called for every stdout record that is not a command response. */
 	onEvent?: (rec: RpcRecord) => void;
 	onStderr?: (text: string) => void;
+	/** Called once when the process exits (code, signal). */
+	onExit?: (code: number | null, signal: NodeJS.Signals | null) => void;
 }
 
 export class RpcClient {
@@ -39,8 +41,12 @@ export class RpcClient {
 		this.child.stdout!.on("data", (chunk: string) => this.onData(chunk));
 		this.child.stderr!.setEncoding("utf8");
 		this.child.stderr!.on("data", (t: string) => opts.onStderr?.(t));
+		// Writing to a process that has died raises EPIPE on stdin. Without a listener that error
+		// crashes the parent; the exit event and the pending-request rejections report it instead.
+		this.child.stdin!.on("error", (e) => opts.onStderr?.(`[rpc stdin error] ${e.message}\n`));
 		this.exited = new Promise((res) => {
-			this.child.on("exit", (code) => {
+			this.child.on("exit", (code, signal) => {
+				opts.onExit?.(code, signal);
 				for (const p of this.pending.values()) p.reject(new Error(`pi exited (${code}) before responding`));
 				this.pending.clear();
 				res(code);
@@ -85,13 +91,19 @@ export class RpcClient {
 				resolve: (r) => (clearTimeout(t), resolve(r)),
 				reject: (e) => (clearTimeout(t), reject(e)),
 			});
+			if (this.child.exitCode !== null || this.child.signalCode !== null || !this.child.stdin!.writable) {
+				this.pending.delete(id);
+				clearTimeout(t);
+				reject(new Error(`RPC ${cmd.type}: pi is not running (exit ${this.child.exitCode ?? this.child.signalCode})`));
+				return;
+			}
 			this.child.stdin!.write(`${JSON.stringify({ ...cmd, id })}\n`);
 		});
 	}
 
 	/** Write a record that has no response (e.g. extension_ui_response). */
 	write(rec: RpcRecord): void {
-		this.child.stdin!.write(`${JSON.stringify(rec)}\n`);
+		if (this.child.stdin!.writable) this.child.stdin!.write(`${JSON.stringify(rec)}\n`);
 	}
 
 	async close(graceMs = 3000): Promise<number | null> {

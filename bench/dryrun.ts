@@ -23,7 +23,7 @@
  * Time is the wall clock from the orchestrator's first prompt to the end. The relay's own latency
  * (git commit and merge) is included; it is a few seconds per Report.
  */
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { appendFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { findPiCli } from "../src/pi-cli.ts";
 import { RpcClient, type RpcRecord } from "../src/rpc.ts";
@@ -172,7 +172,8 @@ export async function relayRun(
 		writeFileSync(join(realctxHome, "config.json"), JSON.stringify(realctxRunConfig(user, o.model, REALCTX_MODEL), null, 2));
 		const role = a.role === "orch" ? "orchestrator" : "worker";
 		const prompts = [join(PROMPTS, `${role}.md`), join(PROMPTS, "overlays", `${provider}-${role}.md`)].filter(existsSync);
-		let stderr = "";
+		const stderrFile = join(runDir, `pi-stderr-${a.role}.log`);
+		writeFileSync(stderrFile, "");
 		const client: RpcClient = new RpcClient({
 			cwd: a.tree,
 			pi: findPiCli(),
@@ -194,12 +195,13 @@ export async function relayRun(
 				REALCTX_HOME: realctxHome,
 				RSA_USAGE_SIDECAR: join(runDir, `usage-sidecar-${a.role}.jsonl`),
 			},
-			onStderr: (t) => (stderr += t),
+			// Streamed to disk, so the cause survives even if the relay itself dies.
+			onStderr: (t) => appendFileSync(stderrFile, t),
 			onEvent: (e) => onEvent(a, e),
-		});
-		client.child.on("exit", (code) => {
-			writeFileSync(join(runDir, `pi-stderr-${a.role}.log`), stderr);
-			if (!stopping) end(undefined, new Error(`${a.role}: pi exited (${code})`));
+			onExit: (code, signal) => {
+				note(a.role, `exit code=${code} signal=${signal}`);
+				if (!stopping) end(undefined, new Error(`${a.role}: pi exited (code ${code}, signal ${signal})`));
+			},
 		});
 		a.client = client;
 	};
