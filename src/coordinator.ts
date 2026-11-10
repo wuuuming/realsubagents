@@ -102,6 +102,7 @@ export class Coordinator {
 	private readonly launches = new Set<Promise<void>>();
 	private leaseTimer?: ReturnType<typeof setInterval>;
 	private budgetHit = false;
+	private baseChecks?: Promise<CheckRun[]>;
 	taskId?: string;
 
 	constructor(deps: CoordinatorDeps) {
@@ -184,6 +185,9 @@ export class Coordinator {
 		this.budgetHit = false;
 		this.d.onTaskOpen(true);
 		for (const w of store.workers(id)) this.enqueueLaunch(w.name, "fresh");
+		// While the workers work, the user's tree is still the base: run the checks there now, so the
+		// integration check can tell new failures from ones that were already there.
+		this.baseChecks = this.task!.check.length ? this.execChecks(this.task!.check) : undefined;
 		const names = p.workers.map((_, i) => `w${i + 1}`).join(", ");
 		return `Task ${id}: ${names} are starting in their own trees (setup can take a minute). Their Reports will arrive as messages. End your turn now unless you have something else to tell the user.`;
 	}
@@ -421,21 +425,72 @@ export class Coordinator {
 		return `${merge}${check ? `\n${check}` : ""}\nCheck further only as needed, then call rsa_finish, or rsa_steer the worker whose paths contain a problem.`;
 	}
 
+	private async execChecks(commands: string[]): Promise<CheckRun[]> {
+		const out: CheckRun[] = [];
+		for (const command of commands) {
+			const r = await sh(command, { cwd: this.d.root, timeoutSec: this.d.checkTimeoutSec ?? 1200, keep: 400_000 });
+			out.push({ command, code: r.timedOut ? null : r.code, ms: r.ms, output: r.tail });
+		}
+		return out;
+	}
+
 	private async runChecks(): Promise<string> {
 		const t = this.task!;
 		if (!t.check.length) return "";
-		const results: { command: string; code: number | null; ms: number }[] = [];
-		const lines: string[] = [];
-		for (const cmd of t.check) {
-			const r = await sh(cmd, { cwd: this.d.root, timeoutSec: this.d.checkTimeoutSec ?? 1200, keep: 200_000 });
-			results.push({ command: cmd, code: r.code, ms: r.ms });
-			const status = r.timedOut ? "timed out" : `exit ${r.code}`;
-			const tail = r.code === 0 ? "" : `\n${r.tail.trimEnd().split("\n").slice(-CHECK_TAIL_LINES).join("\n")}`;
-			lines.push(`$ ${cmd} → ${status} (${Math.round(r.ms / 1000)} s)${tail}`);
-		}
-		this.d.store.append({ type: "task.checked", task: t.id, actor: "runtime", data: { results } });
-		return `<check>\n${lines.join("\n")}\n</check>`;
+		const base = this.baseChecks ? await this.baseChecks.catch(() => undefined) : undefined;
+		this.baseChecks = undefined;
+		const after = await this.execChecks(t.check);
+		this.d.store.append({
+			type: "task.checked",
+			task: t.id,
+			actor: "runtime",
+			data: { results: after.map((r) => ({ command: r.command, code: r.code, ms: r.ms })), base: base?.map((r) => ({ command: r.command, code: r.code, ms: r.ms })) },
+		});
+		return `<check>\n${after.map((r) => describeCheck(r, base?.find((b) => b.command === r.command))).join("\n")}\n</check>`;
 	}
+
+}
+
+export interface CheckRun {
+	command: string;
+	/** null: timed out. */
+	code: number | null;
+	ms: number;
+	output: string;
+}
+
+/** Output lines that name failures, normalised (timings removed) so runs can be compared. */
+export function failureLines(output: string): string[] {
+	const re = /\b(FAIL|FAILED|failed|failing|not ok|error|Error|panicked)\b|✖|✗|×/;
+	return [
+		...new Set(
+			output
+				.split(/\r?\n/)
+				.filter((l) => re.test(l))
+				.map((l) =>
+					l
+						.replace(/\x1b\[[0-9;]*m/g, "")
+						.replace(/\(?\d+(\.\d+)?\s?(ms|s)\)?/g, "")
+						.replace(/\s+/g, " ")
+						.trim(),
+				)
+				.filter(Boolean),
+		),
+	];
+}
+
+/** One check's line for the orchestrator, against the same command's run on the base. */
+export function describeCheck(after: CheckRun, base?: CheckRun): string {
+	const status = (r: CheckRun) => (r.code === null ? "timed out" : `exit ${r.code}`);
+	const head = `$ ${after.command} → ${status(after)} (${Math.round(after.ms / 1000)} s)`;
+	if (after.code === 0) return `${head}${base && base.code !== 0 ? ", fixed: it failed on the base" : ""}`;
+	const tail = (o: string) => o.trimEnd().split("\n").slice(-CHECK_TAIL_LINES).join("\n");
+	if (!base) return `${head}\n${tail(after.output)}`;
+	if (base.code === 0) return `${head}; it passed on the base, so the workers' changes broke it:\n${tail(after.output)}`;
+	const before = new Set(failureLines(base.output));
+	const fresh = failureLines(after.output).filter((l) => !before.has(l));
+	if (!fresh.length) return `${head}; it failed the same way on the base (${status(base)}) before the workers' changes, with no new failure lines. These failures are not caused by the task; no need to investigate them.`;
+	return `${head}; it also failed on the base (${status(base)}). Failure lines that are new since the base:\n${fresh.slice(0, CHECK_TAIL_LINES).join("\n")}`;
 }
 
 function hasSession(dir?: string): boolean {

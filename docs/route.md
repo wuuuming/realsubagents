@@ -15,7 +15,7 @@ The design doc says *what* to build. This route says *in what order*, *how each 
 | Prefix | Meaning | Example |
 | --- | --- | --- |
 | `P0`, `v0.0` … `v0.4` | Phase | v0.2 |
-| `R<phase>.<n>` | Work item | R1.6 |
+| `R<phase>.<n>` | Work item  ✅ | `extensions/realsubagents` worker role |
 | `G<phase>` | Gate (exit criteria of a phase) | G0.1 |
 | `M-n` | Goal metric (the two v1 goals) | M-1 |
 | `H-n` | Health metric (used for optimizing) | H-3 |
@@ -150,16 +150,16 @@ Time is measured as the critical path of model and tool time; relay latency coun
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
 | R1.1 | State store: SQLite WAL, events + projections in one transaction, replay, exactly-once report claim, leases, forward-only migrations | `src/store/` | ✅ | `tests/store.test.ts` |
-| R1.2 | Runtime shared by the bench and the extension: shell helpers, leftover-process cleanup, tree seeding, worker process (`pi --mode rpc`) | `src/runtime/` | ⬜ | |
-| R1.3 | Snapshot of the user's tree (tracked + untracked, via a temporary index) as the task's base; worker worktrees on `rsa/<task>/<worker>` with the project's tree setup | `src/runtime/trees.ts` | ⬜ | |
-| R1.4 | Coordinator: `rsa_split`, `rsa_steer`, `rsa_finish`; Reports delivered as follow-up messages, exactly once (session scan on resume) | `src/coordinator.ts` | ⬜ | |
-| R1.5 | Integration by code: `git merge-tree` of the workers' commits, incremental landing into the user's tree, check commands run by code and reported | | ⬜ | |
+| R1.2 | Runtime shared by the bench and the extension: shell helpers, leftover-process cleanup, tree seeding, worker process (`pi --mode rpc`) | `src/runtime/` | ✅ | `src/runtime/` (sh, seed-tree, trees, worker); the bench uses it |
+| R1.3 | Snapshot of the user's tree (tracked + untracked, via a temporary index) as the task's base; worker worktrees on `rsa/<task>/<worker>` with the project's tree setup | `src/runtime/trees.ts` | ✅ | `tests/trees.test.ts` |
+| R1.4 | Coordinator: `rsa_split`, `rsa_steer`, `rsa_finish`; Reports delivered as follow-up messages, exactly once (session scan on resume) | `src/coordinator.ts` | ✅ | `src/coordinator.ts`, `tests/coordinator.test.ts` |
+| R1.5 | Integration by code: `git merge-tree` of the workers' commits, incremental landing into the user's tree, check commands run by code and reported | | ✅ | checks also run on the base during the worker phase; new failures are marked |
 | R1.6 | Worker role in the same extension (`RSA_ROLE=worker`): `rsa_report`, worker contract (prompts v1) | | ⬜ | |
-| R1.7 | Kill and resume: lease, restart workers with `--continue`, deliver pending Reports (H-10) | Kill test | ⬜ | |
-| R1.8 | Orchestrator prompt section with the time-gain escalation rule; tool surface (`rsa_steer`, `rsa_finish` active only while a task is open) | `prompts/v1/coordinator.md` | ⬜ | |
-| R1.9 | Task budget (USD) from worker usage; leftover cleanup on finish | | ⬜ | |
-| R1.10 | `/rsa` status | | ⬜ | |
-| R1.11 | Bench arm `ext`: the 4 large-parallel tasks (N = 3) and the 6 small tasks (N = 1) through the real extension | `reports/bench/004-v0.1.md` | ⬜ | |
+| R1.7 | Kill and resume: lease, restart workers with `--continue`, deliver pending Reports (H-10) | Kill test | 🟨 | resume logic tested with fake workers; kill test with real Pi pending |
+| R1.8 | Orchestrator prompt section with the time-gain escalation rule; tool surface (`rsa_steer`, `rsa_finish` active only while a task is open) | `prompts/v1/coordinator.md` | ✅ | `prompts/v1/coordinator.md` as a system-prompt section; tools gated by open task |
+| R1.9 | Task budget (USD) from worker usage; leftover cleanup on finish | | ✅ | `budget_usd` on rsa_split; leftover cleanup per worker tree |
+| R1.10 | `/rsa` status | | ✅ | `/rsa` |
+| R1.11 | Bench arm `ext`: the 4 large-parallel tasks (N = 3) and the 6 small tasks (N = 1) through the real extension | `reports/bench/004-v0.1.md` | 🟨 | arm `ext`; pilots accepted (osc133 $1.16, 4.3 min; wsl $2.85, 14.1 min) |
 
 **G0.1:** through the extension, large-parallel median time ≤ 75% and cost ≤ 100% of the baseline; small tasks within +10% cost (design target +3%); the kill/resume test passes; all tests green.
 
@@ -500,3 +500,10 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Done: review of the design against v0.0/v0.05 data (`reports/review-2026-11-10.md`). Main points: time is the product, cost is parity; the proven loop is short-lived split → seeded worktrees → targeted tests → one integration check; most of the design's mechanisms are unproven at this scale. Proposed D-28 (re-sequence v0.1 as the split runtime).
 - Started (no-regret under either order): `src/store/` state store, `src/runtime/` worker runtime and tree manager extracted from the bench.
 - Decided: D-28 accepted by the user. Route §2–§3 rewritten: v0.1 split runtime, v0.2 robustness, v0.3 long tasks, v0.4 deferred mechanisms. Design doc §1 goals updated (rev 2.2).
+
+### 2026-11-10 — v0.1 (split runtime built)
+- Done: R1.2–R1.10. The extension runs the split loop in the user's session: `rsa_split` → snapshot of the working tree → seeded worker trees → worker Pi processes → Reports as follow-up messages → `git merge-tree` → incremental landing → checks by code → `rsa_finish`. State in SQLite; open tasks resume after a restart. 31 tests.
+- Bench: arm `ext` loads the real extension in the baseline session; `bench/pins.json` now pins Pi 1.5.0 and realtasks too. realctx moved to `7d73f11` upstream, so runs use a pinned export (`bench/pin-ext.sh`, `D:/rsa-bench/pins/`).
+- Pilots (kept as `pilot-ext-1`): osc133 accepted, $1.16, 4.3 min (baseline $1.51, 6.1). wsl accepted, $2.85, 14.1 min (baseline $2.57, 10.1): worker tree setup now counts (47 s), checks took 2.2 min, and the orchestrator spent 4.5 min on check failures that already existed on the base.
+- Fixed: checks now also run on the base while the workers work; the integration message marks failures that are new and tells the orchestrator not to investigate the old ones.
+- Next: G0.1 batch, `ARM=ext bench/batch.sh 3` (4 large-parallel × 3, 6 small × 1); kill/resume test with a real Pi.
