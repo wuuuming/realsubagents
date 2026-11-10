@@ -43,6 +43,12 @@ export function findPiCli(env: NodeJS.ProcessEnv = process.env): PiCli {
 	}
 	const installRoot = join(agentDir(env), "install");
 	const current = join(installRoot, "current-version");
+	// RSA_PI_VERSION picks an installed managed release (the benchmark pins one, bench/pins.json).
+	if (env.RSA_PI_VERSION) {
+		const found = fromPackageDir(join(installRoot, "releases", env.RSA_PI_VERSION, "node_modules", ...PKG.split("/")), "managed");
+		if (!found) throw new Error(`RSA_PI_VERSION=${env.RSA_PI_VERSION} is not installed under ${join(installRoot, "releases")}`);
+		return found;
+	}
 	if (existsSync(current)) {
 		const v = readFileSync(current, "utf8").trim();
 		if (/^[0-9A-Za-z._+-]+$/.test(v) && v !== "." && v !== "..") {

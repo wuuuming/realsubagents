@@ -20,6 +20,7 @@ import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statS
 import { homedir } from "node:os";
 import { join, resolve } from "node:path";
 import { findPiCli } from "../src/pi-cli.ts";
+import { Store } from "../src/store/store.ts";
 import { RpcClient, type RpcRecord } from "../src/rpc.ts";
 import { ledger } from "./ledger.ts";
 import { meter } from "./meter.ts";
@@ -44,6 +45,8 @@ export const REALCTX_MODEL = process.env.RSA_REALCTX_MODEL ?? "";
 export const DIFF_EXCLUDE = [".rsa-seed-manifest.json", ".pi/realctx"];
 /** D-23: extension commits the phase's runs must use (`RSA_ALLOW_DRIFT=1` to override). */
 const PINS: Record<string, string> = JSON.parse(readFileSync(join(ROOT, "bench", "pins.json"), "utf8"));
+// Pi is pinned by release; child processes (workers started by the extension too) inherit it.
+if (PINS.pi && !process.env.RSA_PI_VERSION && process.env.RSA_ALLOW_DRIFT !== "1") process.env.RSA_PI_VERSION = PINS.pi;
 
 /**
  * D-20, D-23: the per-run realctx config. Only endpoints, keys and the like come from the user's config;
@@ -155,8 +158,46 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 	writeFileSync(join(realctxHome, "config.json"), JSON.stringify(cfg, null, 2));
 	const sidecar = join(runDir, "usage-sidecar.jsonl");
 	const sessionDir = join(runDir, "sessions");
+	// Arm `ext` (route R1.11): the same session with the realsubagents extension loaded, as a user runs it.
+	const ext = o.arm === "ext";
+	const rsaHome = join(runDir, "rsa");
+	const repo = loadRepos()[task.repo];
+	const extEnv: NodeJS.ProcessEnv = ext
+		? {
+				RSA_HOME: rsaHome,
+				RSA_WORKER_PI_ARGS: JSON.stringify(["--no-extensions", "-e", EXTENSIONS.realctx, "-e", EXTENSIONS.realtasks, "-e", EXTENSIONS.usage]),
+				RSA_TREE_SETUP: JSON.stringify({
+					link: repo.setup?.link,
+					copy: repo.setup?.copy,
+					seed: repo.seed ?? "none",
+					prepare: repo.prepare,
+					prepareTimeoutSec: repo.prepareTimeoutSec,
+				}),
+			}
+		: {};
+	const workerSessions = () =>
+		existsSync(join(rsaHome, "sessions"))
+			? readdirSync(join(rsaHome, "sessions"), { recursive: true })
+					.map(String)
+					.filter((f) => f.endsWith(".jsonl"))
+					.map((f) => ({ file: join(rsaHome, "sessions", f), role: f.replaceAll("\\", "/").split("/").at(-2) ?? "worker" }))
+			: [];
+	/** An open split task, read from the extension's store (absent until the first split). */
+	const openTask = (): boolean => {
+		const db = join(rsaHome, "rsa.sqlite");
+		if (!existsSync(db)) return false;
+		const st = new Store(db);
+		try {
+			return st.db.prepare("SELECT count(*) AS n FROM tasks WHERE state IN ('running', 'integrating')").get()!.n !== 0;
+		} finally {
+			st.close();
+		}
+	};
 	let stderr = "";
 	let cost = 0;
+	let workerCost = 0;
+	let busy = true;
+	let lastSettled = 0;
 	let settled: RpcRecord | undefined;
 	let stopReason: "cap" | "timeout" | undefined;
 	const client: RpcClient = new RpcClient({
@@ -168,10 +209,11 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 			"-e", EXTENSIONS.realctx,
 			"-e", EXTENSIONS.realtasks,
 			"-e", EXTENSIONS.usage,
+			...(ext ? ["-e", join(ROOT, "extensions", "realsubagents", "index.ts")] : []),
 			"--model", o.model,
 			"--thinking", o.thinking,
 		],
-		env: { ...process.env, REALCTX_HOME: realctxHome, RSA_USAGE_SIDECAR: sidecar },
+		env: { ...process.env, REALCTX_HOME: realctxHome, RSA_USAGE_SIDECAR: sidecar, ...extEnv },
 		onStderr: (t) => (stderr += t),
 		onEvent: (e) => {
 			if (e.type === "extension_ui_request" && ["select", "confirm", "input", "editor"].includes(String(e.method))) {
@@ -179,11 +221,16 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 			} else if (e.type === "message_end") {
 				const m = e.message as { role?: string; usage?: { cost?: { total?: number } } };
 				if (m?.role === "assistant") cost += m.usage?.cost?.total ?? 0;
-				if (cost > o.capUsd && !stopReason) {
+				if (cost + workerCost > o.capUsd && !stopReason) {
 					stopReason = "cap";
 					void client.send({ type: "abort" }, 120_000).catch(() => {});
 				}
-			} else if (e.type === "agent_settled") settled = e;
+			} else if (e.type === "agent_start") busy = true;
+			else if (e.type === "agent_settled") {
+				settled = e;
+				busy = false;
+				lastSettled = Date.now();
+			}
 		},
 	});
 	const wallTimer = setTimeout(() => {
@@ -193,8 +240,21 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 	try {
 		const r = await client.send({ type: "prompt", message: task.prompt }, 120_000);
 		if (!r.success) throw new Error(`prompt rejected: ${JSON.stringify(r).slice(0, 500)}`);
-		while (!settled) {
+		let lastMeter = 0;
+		for (;;) {
 			if (client.child.exitCode !== null) throw new Error(`pi exited (${client.child.exitCode})`);
+			if (stopReason) break;
+			// Baseline: done when the session settles. ext: also no open split task, and the session
+			// stayed idle for 5 s (a Report wakes it with a follow-up message).
+			if (settled && !busy && (!ext || (!openTask() && Date.now() - lastSettled > 5_000))) break;
+			if (ext && Date.now() - lastMeter > 30_000) {
+				lastMeter = Date.now();
+				workerCost = meter(workerSessions(), []).total.costUsd;
+				if (cost + workerCost > o.capUsd && !stopReason) {
+					stopReason = "cap";
+					void client.send({ type: "abort" }, 120_000).catch(() => {});
+				}
+			}
 			await new Promise((r) => setTimeout(r, 500));
 		}
 	} finally {
@@ -205,12 +265,13 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 		const late = killLeftovers(undefined, runDir);
 		res.leftoverProcesses = early.length + late.length;
 		writeFileSync(join(runDir, "pi-stderr.log"), stderr);
+		if (ext) await removeWorkerTrees(tree, rsaHome);
 	}
 	res.status = stopReason ?? "ok";
 	const sessions = existsSync(sessionDir)
 		? readdirSync(sessionDir, { recursive: true }).map(String).filter((f) => f.endsWith(".jsonl"))
 		: [];
-	const m = meter(sessions.map((f) => ({ file: join(sessionDir, f) })), [sidecar]);
+	const m = meter([...sessions.map((f) => ({ file: join(sessionDir, f) })), ...workerSessions()], [sidecar]);
 	const { trace, ...summary } = m;
 	writeFileSync(join(runDir, "meter.json"), JSON.stringify(summary, null, 2) + "\n");
 	writeFileSync(join(runDir, "trace.jsonl"), trace.map((t) => JSON.stringify(t)).join("\n") + "\n");
@@ -219,6 +280,18 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 	res.modelCalls = Object.values(m.turns).reduce((a, t) => a + t.modelCalls, 0);
 	res.compactions = m.compactions.length;
 	if (res.status === "ok" && m.total.costUsd > o.capUsd) res.status = "cap";
+}
+
+/** Worker trees the extension left (a task not finished by the orchestrator, a cap, a timeout). */
+async function removeWorkerTrees(tree: string, rsaHome: string): Promise<void> {
+	const list = (await sh("git worktree list --porcelain", { cwd: tree })).tail;
+	const home = resolve(rsaHome).replaceAll("\\", "/").toLowerCase();
+	for (const line of list.split("\n")) {
+		const p = line.startsWith("worktree ") ? line.slice(9).trim() : "";
+		if (p && resolve(p).replaceAll("\\", "/").toLowerCase().startsWith(home)) await sh(`git worktree remove --force ${q(p)}`, { cwd: tree, timeoutSec: 600 });
+	}
+	await sh("git worktree prune", { cwd: tree });
+	await sh("git for-each-ref --format='%(refname:short)' 'refs/heads/rsa/' | xargs -r git branch -D", { cwd: tree });
 }
 
 /** Reset withheld paths to their base version, then apply each part's change to them. */
@@ -315,6 +388,9 @@ export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult>
 		const realctxHead = await gitHead(resolve(EXTENSIONS.realctx, "../../.."));
 		if (PINS.realctx && !realctxHead.startsWith(PINS.realctx) && !PINS.realctx.startsWith(realctxHead) && process.env.RSA_ALLOW_DRIFT !== "1")
 			throw new Error(`realctx is at ${realctxHead}, the phase pins ${PINS.realctx} (bench/pins.json, D-23); update realctx or set RSA_ALLOW_DRIFT=1`);
+		const realtasksHead = await gitHead(resolve(EXTENSIONS.realtasks, ".."));
+		if (PINS.realtasks && !realtasksHead.startsWith(PINS.realtasks) && !PINS.realtasks.startsWith(realtasksHead) && process.env.RSA_ALLOW_DRIFT !== "1")
+			throw new Error(`realtasks is at ${realtasksHead}, the phase pins ${PINS.realtasks} (bench/pins.json); set RSA_ALLOW_DRIFT=1 to override`);
 	}
 	const repo = loadRepos()[task.repo];
 	if (!repo) throw new Error(`unknown repo ${task.repo} (bench/repos.json)`);

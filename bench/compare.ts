@@ -35,7 +35,7 @@ function load(root: string): Run[] {
 	for (const task of readdirSync(root)) {
 		let dirs: string[];
 		try {
-			dirs = readdirSync(join(root, task)).filter((d) => /^(baseline|rsa\w*)-\d+$/.test(d));
+			dirs = readdirSync(join(root, task)).filter((d) => /^(baseline|rsa\w*|ext)-\d+$/.test(d));
 		} catch {
 			continue;
 		}
@@ -130,7 +130,8 @@ if (import.meta.main) {
 		run: `${r.task}/${r.arm}-${r.n}`,
 		accepted: r.accepted,
 		serial: r.relay ? serialFraction(r.relay.events, r.wallMs) : Number.NaN,
-		overhead: (r.byRole.orch?.costUsd ?? 0) / r.costUsd,
+		// ext arm: the orchestrator is the main session (it may also have worked directly).
+		overhead: (r.byRole.orch?.costUsd ?? (r.arm === "ext" ? (r.byRole.main?.costUsd ?? 0) : 0)) / r.costUsd,
 		merges: r.relay?.merges ?? 0,
 		conflicts: r.relay?.conflicts ?? 0,
 		steers: r.relay?.events.filter((e) => /^steer/.test(e.what)).length ?? 0,
