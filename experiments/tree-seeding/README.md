@@ -2,8 +2,8 @@
 
 Checks whether a new git worktree can reuse a warm base tree's immutable parts through hard links, without ever changing the base tree.
 
-- `seed-tree.mjs seed --mode cargo|npm --base <warm tree> --dest <new worktree>` links the files and writes `<dest>/.rsa-seed-manifest.json`.
-- `seed-tree.mjs verify --dest <new worktree>` checks that no linked file changed on the base side (size and mtime). Any change means a tool wrote through a hard link: the rule for that toolchain is unsafe.
+- `src/runtime/seed-tree.mjs seed --mode cargo|npm --base <warm tree> --dest <new worktree>` links the files and writes `<dest>/.rsa-seed-manifest.json`.
+- `src/runtime/seed-tree.mjs verify --dest <new worktree>` checks that no linked file changed on the base side (size and mtime). Any change means a tool wrote through a hard link: the rule for that toolchain is unsafe.
 - `run-cargo.sh`, `run-npm.sh` run the experiment end to end (defaults: `D:/rsa-bench/repos/{bilinova,pi}`, trees in `D:/rsa-bench/trees`).
 
 Rules found (2026-11-09):

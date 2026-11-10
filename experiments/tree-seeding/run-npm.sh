@@ -3,7 +3,7 @@
 set -u
 BASE=${1:-D:/rsa-bench/repos/pi}
 TREES=${2:-D:/rsa-bench/trees}
-SEED="node $(dirname "$0")/seed-tree.mjs"
+SEED="node $(dirname "$0")/../../src/runtime/seed-tree.mjs"
 T="$TREES/pi-seeded"
 mkdir -p "$TREES"
 git -C "$BASE" worktree remove --force "$T" 2>/dev/null; rm -rf "$T"

@@ -3,7 +3,7 @@
 set -u
 BASE=${1:-D:/rsa-bench/repos/bilinova}
 TREES=${2:-D:/rsa-bench/trees}
-SEED="node $(dirname "$0")/seed-tree.mjs"
+SEED="node $(dirname "$0")/../../src/runtime/seed-tree.mjs"
 mkdir -p "$TREES"
 COMMIT=$(git -C "$BASE" rev-parse HEAD)
 MEMBERS=$(cd "$BASE" && cargo metadata --no-deps --format-version 1 | node -e 'let s="";process.stdin.on("data",d=>s+=d).on("end",()=>console.log(JSON.parse(s).packages.map(p=>p.name).join(" ")))')

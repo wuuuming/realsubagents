@@ -36,7 +36,7 @@ export const EXTENSIONS = {
 	realtasks: process.env.RSA_REALTASKS_EXT ?? join(GIT_PKGS, "st0nie", "realtasks", "index.ts"),
 	usage: join(ROOT, "extensions", "rsa-bench-usage", "index.ts"),
 };
-const SEED = join(ROOT, "experiments", "tree-seeding", "seed-tree.mjs");
+const SEED = join(ROOT, "src", "runtime", "seed-tree.mjs");
 /** D-13: cheap model for realctx's historian and memory rewrites. */
 /** D-24: empty = realctx's own calls (memory edits, history) use the session model, as in the user's setup. */
 export const REALCTX_MODEL = process.env.RSA_REALCTX_MODEL ?? "";

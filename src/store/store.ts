@@ -31,6 +31,11 @@ export interface Task {
 	updatedAt: number;
 	outcome?: string;
 	summary?: string;
+	/** Commands run by code on the merged result (route R1.5). */
+	check: string[];
+	budgetUsd?: number;
+	/** Tree object last applied to the user's working tree (incremental landing). */
+	landed?: string;
 }
 
 export interface Worker {
@@ -64,7 +69,7 @@ export interface Report {
 
 /** The v0.1 event catalog. `data` shapes are documented per type. */
 export type EventType =
-	| "task.created" // { title, goal, base, branch, project }
+	| "task.created" // { title, goal, base, branch, project, check, budgetUsd }
 	| "worker.dispatched" // { worker, paths, goal, acceptance, brief }
 	| "worker.started" // { worker, tree, branch, pid, sessionDir }
 	| "worker.steered" // { worker, message }
@@ -73,7 +78,8 @@ export type EventType =
 	| "worker.merge_conflict" // { worker, commit, files }
 	| "worker.stopped" // { worker, reason }
 	| "task.integrating" // {}
-	| "task.checked" // { commands, ok, failures }
+	| "task.landed" // { tree, files }
+	| "task.checked" // { results: [{ command, code, ms }] }
 	| "task.finished" // { outcome: "success" | "failure", summary }
 	| "task.abandoned" // { reason }
 	| "report.delivered"; // { report: seq }
@@ -109,7 +115,8 @@ const MIGRATIONS: string[] = [
 	CREATE TABLE tasks (
 		id TEXT PRIMARY KEY, project TEXT NOT NULL, title TEXT NOT NULL, goal TEXT NOT NULL,
 		state TEXT NOT NULL, base TEXT NOT NULL, branch TEXT NOT NULL,
-		created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, outcome TEXT, summary TEXT
+		created_at INTEGER NOT NULL, updated_at INTEGER NOT NULL, outcome TEXT, summary TEXT,
+		landed TEXT, data TEXT NOT NULL DEFAULT '{}'
 	);
 	CREATE INDEX tasks_state ON tasks(project, state);
 	CREATE TABLE workers (
@@ -263,8 +270,8 @@ export class Store {
 		switch (e.type) {
 			case "task.created":
 				this.db
-					.prepare("INSERT INTO tasks(id, project, title, goal, state, base, branch, created_at, updated_at) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?)")
-					.run(e.task, String(d.project ?? ""), String(d.title), String(d.goal ?? ""), String(d.base), String(d.branch), e.at, e.at);
+					.prepare("INSERT INTO tasks(id, project, title, goal, state, base, branch, created_at, updated_at, data) VALUES (?, ?, ?, ?, 'running', ?, ?, ?, ?, ?)")
+					.run(e.task, String(d.project ?? ""), String(d.title), String(d.goal ?? ""), String(d.base), String(d.branch), e.at, e.at, JSON.stringify({ check: d.check ?? [], budgetUsd: d.budgetUsd }));
 				return;
 			case "worker.dispatched": {
 				const w: Worker = { task: e.task, name: String(d.worker), state: "starting", paths: d.paths ?? [], goal: d.goal ?? "", acceptance: d.acceptance ?? "", brief: d.brief ?? "" };
@@ -303,6 +310,9 @@ export class Store {
 				return;
 			case "task.integrating":
 				setTask("integrating");
+				return;
+			case "task.landed":
+				this.db.prepare("UPDATE tasks SET landed = ?, updated_at = ? WHERE id = ?").run(String(d.tree), e.at, e.task);
 				return;
 			case "task.checked":
 				touch();
@@ -406,7 +416,11 @@ export class Store {
 }
 
 function rowToTask(r: Record<string, any>): Task {
+	const data = JSON.parse(r.data ?? "{}");
 	return {
+		check: data.check ?? [],
+		...(data.budgetUsd ? { budgetUsd: data.budgetUsd } : {}),
+		...(r.landed ? { landed: r.landed } : {}),
 		id: r.id,
 		project: r.project,
 		title: r.title,
