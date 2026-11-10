@@ -1,6 +1,7 @@
 // A stand-in for Pi's CLI in `--mode json`: reads the task from stdin and answers per FAKE_PI_MODE.
 // ok: one tool call, then a final answer echoing the task, argv and the subagent env flag.
 // error: the final assistant message has stopReason "error". crash: exit 3 with stderr. hang: never ends.
+// long: a 3000-line answer.
 const mode = process.env.FAKE_PI_MODE ?? "ok";
 let task = "";
 process.stdin.setEncoding("utf8");
@@ -22,6 +23,10 @@ process.stdin.on("end", () => {
 	out({ type: "tool_execution_start", toolCallId: "t1", toolName: "read", args: { path: "a.txt" } });
 	if (mode === "error") {
 		out({ type: "message_end", message: { role: "assistant", content: [], stopReason: "error", errorMessage: "provider overloaded", usage: usage(5) } });
+		return;
+	}
+	if (mode === "long") {
+		out({ type: "message_end", message: { role: "assistant", content: [{ type: "text", text: Array.from({ length: 3000 }, (_, i) => `line ${i}`).join("\n") }], stopReason: "stop", usage: usage(1) } });
 		return;
 	}
 	const text = JSON.stringify({ task, argv: process.argv.slice(2), sub: process.env.RSA_SUBAGENT ?? null, cwd: process.cwd() });

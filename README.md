@@ -9,7 +9,12 @@ That is all it does:
 - **No nesting.** Subagents run with `RSA_SUBAGENT=1`, so this extension registers nothing inside them.
 - **No policy.** The extension never decides whether a task is worth delegating, how to split it, or how many subagents to run. The user or the main agent decides that, because tasks differ in type and scale.
 
-A subagent runs in the main agent's working directory, on the same model and thinking level. It loads your configured extensions and gets none of the conversation, so the `task` must be self-contained. If one message contains several `subagent` calls, they run in parallel, because Pi runs tool calls in parallel. Give parallel subagents work that does not write the same files. The subagents' token usage is added to the main session's totals.
+A subagent runs in the main agent's working directory, on the same model and thinking level. It loads your configured extensions and gets none of the conversation, so the `task` must be self-contained. If one message contains several `subagent` calls, they run in parallel, because Pi runs tool calls in parallel. Give parallel subagents work that does not write the same files.
+
+- **Result:** the subagent's final message. A report longer than Pi's tool-output limits (2000 lines or 50 KB) is cut, and the full text is saved to a temp file whose path is named in the result.
+- **Usage:** the subagents' token usage is added to the main session's totals.
+- **Display:** the TUI shows the task, then the subagent's current tool and elapsed time while it runs. When it finishes, you see turns, time, cost and the report (collapsed; expand with the usual key).
+- **Cleanup:** subagents still running are killed when the session shuts down or Pi exits.
 
 ## Use
 
@@ -27,7 +32,7 @@ Requires Node ≥ 22.13 and Pi 1.5.x. TypeScript runs natively, so there is no b
 npm install
 npm run typecheck
 npm test          # uses a fake Pi CLI (tests/fixtures/fake-pi.mjs), no model calls
-npm run smoke     # live: a real Pi calls subagent, which writes a file (a few cents)
+npm run smoke     # live: a real Pi runs two subagents in parallel, each writes a file (~$0.10)
 ```
 
 | Path | Contents |

@@ -56,7 +56,7 @@ function load(env: string | undefined) {
 	if (env === undefined) delete process.env[SUBAGENT_ENV];
 	else process.env[SUBAGENT_ENV] = env;
 	try {
-		realsubagents({ registerTool: (t: { name: string }) => tools.push(t) } as never);
+		realsubagents({ registerTool: (t: { name: string }) => tools.push(t), on: () => {} } as never);
 	} finally {
 		if (prev === undefined) delete process.env[SUBAGENT_ENV];
 		else process.env[SUBAGENT_ENV] = prev;

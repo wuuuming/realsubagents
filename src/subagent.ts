@@ -69,6 +69,17 @@ interface AssistantMessage {
 	usage?: Partial<Usage>;
 }
 
+/** Pi's own tool-output limits (DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES). */
+export const MAX_LINES = 2000;
+export const MAX_BYTES = 50 * 1024;
+
+/** The head of `text` within the line and byte limits. */
+export function capOutput(text: string, maxLines = MAX_LINES, maxBytes = MAX_BYTES): { text: string; truncated: boolean } {
+	let out = text.split("\n").slice(0, maxLines).join("\n");
+	if (Buffer.byteLength(out) > maxBytes) out = Buffer.from(out).subarray(0, maxBytes).toString("utf8").replace(/\uFFFD+$/, "");
+	return { text: out, truncated: out.length < text.length };
+}
+
 /** One-line description of a tool call for progress display. */
 export function describeTool(name: string, args: unknown): string {
 	const a = (args ?? {}) as Record<string, unknown>;
