@@ -464,24 +464,39 @@ export interface CheckRun {
 	output: string;
 }
 
-/** Output lines that name failures, normalised (timings removed) so runs can be compared. */
+/** Output lines that name failures, normalised so runs can be compared: no colours, timings,
+ * numbers or temporary paths (they differ between runs of the same failure). Summary count lines
+ * are left out; `failedCount` compares those. */
 export function failureLines(output: string): string[] {
 	const re = /\b(FAIL|FAILED|failed|failing|not ok|error|Error|panicked)\b|✖|✗|×/;
+	const summary = /^\s*(Tests?|Test Files|test result|Suites?|# (fail|pass|tests))\b|\b\d+ (passed|failed)\b/i;
 	return [
 		...new Set(
 			output
 				.split(/\r?\n/)
-				.filter((l) => re.test(l))
+				.map((l) => l.replace(/\x1b\[[0-9;]*m/g, ""))
+				.filter((l) => re.test(l) && !summary.test(l))
 				.map((l) =>
 					l
-						.replace(/\x1b\[[0-9;]*m/g, "")
+						.replace(/[A-Za-z]:\\[^\s'"]*|\/tmp\/[^\s'"]*/g, "<path>")
 						.replace(/\(?\d+(\.\d+)?\s?(ms|s)\)?/g, "")
+						.replace(/\d+/g, "#")
 						.replace(/\s+/g, " ")
 						.trim(),
 				)
 				.filter(Boolean),
 		),
 	];
+}
+
+/** The largest "N failed" count in the output (vitest, cargo, node:test summaries), if any. */
+export function failedCount(output: string): number | undefined {
+	let n: number | undefined;
+	for (const m of output.replace(/\x1b\[[0-9;]*m/g, "").matchAll(/\b(\d+) failed\b|^# fail (\d+)/gm)) {
+		const v = Number(m[1] ?? m[2]);
+		n = n === undefined ? v : Math.max(n, v);
+	}
+	return n;
 }
 
 /** One check's line for the orchestrator, against the same command's run on the base. */
@@ -494,7 +509,11 @@ export function describeCheck(after: CheckRun, base?: CheckRun): string {
 	if (base.code === 0) return `${head}; it passed on the base, so the workers' changes broke it:\n${tail(after.output)}`;
 	const before = new Set(failureLines(base.output));
 	const fresh = failureLines(after.output).filter((l) => !before.has(l));
-	if (!fresh.length) return `${head}; it failed the same way on the base (${status(base)}) before the workers' changes, with no new failure lines. These failures are not caused by the task; no need to investigate them.`;
+	const [nb, na] = [failedCount(base.output), failedCount(after.output)];
+	if (nb !== undefined && na !== undefined && na > nb)
+		return `${head}; it also failed on the base, but with ${nb} failure(s); now ${na}. New failure lines:\n${(fresh.length ? fresh : failureLines(after.output)).slice(0, CHECK_TAIL_LINES).join("\n")}`;
+	if (!fresh.length || (nb !== undefined && na !== undefined && na <= nb))
+		return `${head}; it failed the same way on the base (${status(base)}) before the workers' changes, with no new failure lines. These failures are not caused by the task; no need to investigate them.`;
 	return `${head}; it also failed on the base (${status(base)}). Failure lines that are new since the base:\n${fresh.slice(0, CHECK_TAIL_LINES).join("\n")}`;
 }
 

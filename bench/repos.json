@@ -31,6 +31,9 @@
 		"prepareTimeoutSec": 900,
 		"ignoreFailures": [
 			"model-catalog-protocol\\.test\\.ts::.*reaches the OpenRouter API"
+		],
+		"build": [
+			"packages/*/dist"
 		]
 	}
 }

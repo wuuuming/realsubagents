@@ -185,8 +185,9 @@ async function agentRun(task: LoadedTask, o: RunOptions, runDir: string, tree: s
 					link: repo.setup?.link,
 					copy: repo.setup?.copy,
 					seed: repo.seed ?? "none",
-					prepare: repo.prepare,
-					prepareTimeoutSec: repo.prepareTimeoutSec,
+					// The main tree is prepared already; workers copy its build outputs (repos.json `build`)
+					// instead of rerunning prepare. Without `build`, they run prepare like the main tree.
+					...(repo.build ? { build: repo.build } : { prepare: repo.prepare, prepareTimeoutSec: repo.prepareTimeoutSec }),
 				}),
 			}
 		: {};

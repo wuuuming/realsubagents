@@ -101,3 +101,14 @@ test("conflicting edits are reported with the conflicting files", async () => {
 		rmSync(dir, { recursive: true, force: true });
 	}
 });
+
+test("expandGlobs matches one directory level per *", async () => {
+	const { expandGlobs } = await import("../src/runtime/trees.ts");
+	const dir = mkdtempSync(join(tmpdir(), "rsa-glob-"));
+	try {
+		for (const p of ["packages/a/dist", "packages/b/dist", "packages/c/src"]) await must(`mkdir -p '${join(dir, p)}'`, dir);
+		assert.deepEqual(expandGlobs(dir, ["packages/*/dist", "nope/*"]).sort(), ["packages/a/dist", "packages/b/dist"]);
+	} finally {
+		rmSync(dir, { recursive: true, force: true });
+	}
+});

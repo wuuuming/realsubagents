@@ -12,7 +12,7 @@
  * - `land()`: applies the difference between the last landed tree and a new merged tree to the
  *   user's working tree, so repeated landings (after a steer) are incremental.
  */
-import { cpSync, existsSync, mkdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { must, sh } from "./sh.ts";
@@ -29,6 +29,12 @@ export interface TreeSetup {
 	link?: string[];
 	/** Paths copied from the user's tree (small generated files). */
 	copy?: string[];
+	/**
+	 * Ignored build outputs copied from the user's tree, so workers need not rebuild. `*` matches one
+	 * path segment, e.g. "packages/*\/dist". Copied, not hard-linked: a rebuild in the worker writes
+	 * files in place, which would change the user's files through a shared link.
+	 */
+	build?: string[];
 	/** Hard-link seeding of dependencies and build outputs; "auto" detects npm or Cargo. */
 	seed?: "npm" | "cargo" | "none" | "auto";
 	/** Commands run in a new tree after setup and seeding. */
@@ -92,6 +98,33 @@ export async function snapshot(root: string): Promise<string> {
 	}
 }
 
+/** Expand patterns whose segments may be `*` (one directory level) against `root`. */
+export function expandGlobs(root: string, patterns: string[]): string[] {
+	const out: string[] = [];
+	for (const pat of patterns) {
+		let paths = [""];
+		for (const seg of pat.split("/").filter(Boolean)) {
+			const next: string[] = [];
+			for (const p of paths) {
+				if (seg === "*") {
+					let names: string[] = [];
+					try {
+						names = readdirSync(join(root, p), { withFileTypes: true })
+							.filter((d) => d.isDirectory())
+							.map((d) => d.name);
+					} catch {
+						// missing directory: no match
+					}
+					for (const n of names) next.push(p ? `${p}/${n}` : n);
+				} else next.push(p ? `${p}/${seg}` : seg);
+			}
+			paths = next;
+		}
+		out.push(...paths.filter((p) => existsSync(join(root, p))));
+	}
+	return [...new Set(out)];
+}
+
 function linkDir(src: string, dst: string): void {
 	mkdirSync(dirname(dst), { recursive: true });
 	symlinkSync(src, dst, process.platform === "win32" ? "junction" : "dir");
@@ -104,7 +137,7 @@ export async function createTree(root: string, dest: string, base: string, branc
 		const src = join(root, rel);
 		if (!existsSync(join(dest, rel)) && existsSync(src)) linkDir(src, join(dest, rel));
 	}
-	for (const rel of setup.copy ?? []) {
+	for (const rel of [...(setup.copy ?? []), ...expandGlobs(root, setup.build ?? [])]) {
 		const src = join(root, rel);
 		if (existsSync(src)) cpSync(src, join(dest, rel), { recursive: true });
 	}
@@ -140,7 +173,7 @@ export async function removeTree(root: string, dest: string, setup: TreeSetup, b
 export async function commitTree(tree: string, message: string, setup: TreeSetup): Promise<string> {
 	await must("git add -A", tree);
 	// Unstage harness paths; `git add` with exclude pathspecs fails when such a path is ignored.
-	const harness = [...HARNESS_PATHS, ...(setup.link ?? []), ...(setup.copy ?? [])].map(q).join(" ");
+	const harness = [...HARNESS_PATHS, ...(setup.link ?? []), ...(setup.copy ?? []), ...(setup.build ?? [])].map(q).join(" ");
 	await sh(`git reset -q -- ${harness}`, { cwd: tree });
 	if ((await sh("git diff --cached --quiet", { cwd: tree })).code !== 0) {
 		const msgFile = join(tmpdir(), `rsa-msg-${process.pid}-${Date.now()}`);

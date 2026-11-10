@@ -89,6 +89,8 @@ export interface RepoDef {
 	 * that depend on the outside world, e.g. live network APIs, whose failures say nothing about the change.
 	 */
 	ignoreFailures?: string[];
+	/** Ignored build outputs worker trees copy from the main tree instead of running `prepare` (arm ext). */
+	build?: string[];
 }
 
 export const BENCH_DIR = resolve(import.meta.dirname);

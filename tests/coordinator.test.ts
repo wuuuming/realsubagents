@@ -196,11 +196,15 @@ test("a restarted coordinator resumes the open task and does not re-deliver what
 test("check results separate new failures from ones already on the base", async () => {
 	const { describeCheck, failureLines } = await import("../src/coordinator.ts");
 	const base = { command: "t", code: 1, ms: 1000, output: "✓ a\n✖ old test fails (12 ms)\nTests 1 failed" };
-	assert.deepEqual(failureLines(base.output), ["✖ old test fails", "Tests 1 failed"]);
+	assert.deepEqual(failureLines(base.output), ["✖ old test fails"]);
 	const same = describeCheck({ command: "t", code: 1, ms: 900, output: "✖ old test fails (30 ms)\nTests 1 failed" }, base);
 	assert.match(same, /failed the same way on the base/);
 	const worse = describeCheck({ command: "t", code: 1, ms: 900, output: "✖ old test fails\n✖ new test fails\nTests 2 failed" }, base);
-	assert.match(worse, /new since the base:\n✖ new test fails\nTests 2 failed$/);
+	assert.match(worse, /with 1 failure\(s\); now 2\. New failure lines:\n✖ new test fails$/);
+	// The wsl pilot: the same failures, but random temp paths and a higher passed count.
+	const b2 = { command: "v", code: 1, ms: 1, output: "Error: EPERM: operation not permitted, symlink 'C:\\Temp\\pi-env-111-abc\\t.txt' -> 'C:\\Temp\\pi-env-111-abc\\l.txt'\nTests 7 failed | 1850 passed (1860)" };
+	const a2 = { command: "v", code: 1, ms: 1, output: "Error: EPERM: operation not permitted, symlink 'C:\\Temp\\pi-env-999-xyz\\t.txt' -> 'C:\\Temp\\pi-env-999-xyz\\l.txt'\nTests 7 failed | 1855 passed (1868)" };
+	assert.match(describeCheck(a2, b2), /failed the same way on the base/);
 	assert.match(describeCheck({ command: "t", code: 1, ms: 1, output: "x" }, { ...base, code: 0 }), /passed on the base/);
 	assert.match(describeCheck({ command: "t", code: 0, ms: 1, output: "" }, base), /fixed/);
 });
