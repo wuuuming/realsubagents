@@ -1,7 +1,7 @@
 /**
  * R.05.3–R.05.5: compare the rsa arm (v0.05 relay) with the single-session baseline, per task.
  *
- * node bench/compare.ts [--runs D:/rsa-bench/runs] [--json reports/bench/002-dryrun.json]
+ * node bench/compare.ts [--arm rsa|rsav1] [--runs D:/rsa-bench/runs] [--json reports/bench/002-dryrun.json]
  *
  * Per task: mean cost and wall time of `baseline-*` and `rsa-*` runs (status ok), acceptance counts,
  * and the ratios rsa ÷ baseline. G0.05: median cost ratio ≤ 0.80 or median time ratio ≤ 0.75.
@@ -35,7 +35,7 @@ function load(root: string): Run[] {
 	for (const task of readdirSync(root)) {
 		let dirs: string[];
 		try {
-			dirs = readdirSync(join(root, task)).filter((d) => /^(baseline|rsa)-\d+$/.test(d));
+			dirs = readdirSync(join(root, task)).filter((d) => /^(baseline|rsa\w*)-\d+$/.test(d));
 		} catch {
 			continue;
 		}
@@ -97,14 +97,15 @@ export function serialFraction(events: { t: number; who: string; what: string }[
 if (import.meta.main) {
 	const argv = process.argv.slice(2);
 	const opt = (k: string, d: string) => (argv.includes(k) ? argv[argv.indexOf(k) + 1] : d);
+	const ARM = opt("--arm", "rsa");
 	const runs = load(opt("--runs", process.env.RSA_RUNS ?? "D:/rsa-bench/runs"));
-	const tasks = [...new Set(runs.filter((r) => r.arm === "rsa").map((r) => r.task))].sort();
+	const tasks = [...new Set(runs.filter((r) => r.arm === ARM).map((r) => r.task))].sort();
 
 	console.log("| task | baseline runs (acc) | rsa runs (acc) | baseline $ | rsa $ | cost ratio | baseline min | rsa min | time ratio |");
 	console.log("|---|---|---|---|---|---|---|---|---|");
 	const rows = tasks.map((task) => {
 		const b = runs.filter((r) => r.task === task && r.arm === "baseline");
-		const s = runs.filter((r) => r.task === task && r.arm === "rsa");
+		const s = runs.filter((r) => r.task === task && r.arm === ARM);
 		const row = {
 			task,
 			baseline: { runs: b.length, accepted: b.filter((r) => r.accepted).length, cost: mean(b.map((r) => r.costUsd)), wallMin: mean(b.map((r) => r.wallMs)) / 60000 },
@@ -124,7 +125,7 @@ if (import.meta.main) {
 	const pass = mc <= 0.8 || mt <= 0.75;
 	console.log(`\nG0.05: median cost ratio ${pct(mc)} (≤ 80%), median time ratio ${pct(mt)} (≤ 75%) → ${pass ? "GO" : "NO-GO"}`);
 
-	const rsa = runs.filter((r) => r.arm === "rsa");
+	const rsa = runs.filter((r) => r.arm === ARM);
 	const per = rsa.map((r) => ({
 		run: `${r.task}/rsa-${r.n}`,
 		accepted: r.accepted,
@@ -156,8 +157,8 @@ if (import.meta.main) {
 	console.log("\n| sessions | count | n (mean) | P | g | Δ/call | O/call |\n|---|---|---|---|---|---|---|");
 	const fit = {
 		baseline: shape("baseline (same tasks)", sessions("baseline", ["main"])),
-		worker: shape("rsa worker", sessions("rsa", ["w1", "w2"])),
-		orchestrator: shape("rsa orchestrator", sessions("rsa", ["orch"])),
+		worker: shape("rsa worker", sessions(ARM, ["w1", "w2"])),
+		orchestrator: shape("rsa orchestrator", sessions(ARM, ["orch"])),
 	};
 
 	const json = opt("--json", "");

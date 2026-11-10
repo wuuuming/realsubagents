@@ -58,3 +58,9 @@ There is no Anthropic overlay. The v0.05 benchmark runs Opus 5.5 in every role, 
 - **Effort changes.** [A55] suggests starting Opus 5.5 at `medium`. The baseline ran at `high`, so the arms stay at `high`; effort is a separate tuning knob (`reports/tuning/`).
 - **Thinking instructions** ("think carefully"). [A55] advises removing them; thinking is adaptive and always on.
 - **Few-shot examples.** [A] recommends them for output format. The Report is a tool call with a schema ([G] rule 13), which fixes the format without examples and costs fewer prefix tokens.
+
+## v1 changes (`prompts/v1/`, route D-26)
+
+From the v0.05 dry run (`reports/bench/002-dryrun.md`):
+- **Verification placement.** Worker rule 4 now names what to run (the dispatch's targeted test command plus the test files the worker touched) and says why the rest waits: the orchestrator runs the repo-wide checks once on the merged tree. This narrows scope rather than adding a verification step, in line with [A5]. Fairness: total verification per run equals the baseline's single final check.
+- **Balanced split.** The orchestrator estimates each part's size and moves work to even out the workers, because the run ends when the slower worker does ([AM] §3: scale effort explicitly). The dispatch's acceptance gives the exact targeted test command (rule 2, output format and tools).

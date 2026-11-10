@@ -35,7 +35,8 @@ import { killLeftovers, must, sh } from "./sh.ts";
 import type { LoadedTask, RepoDef } from "./task.ts";
 
 const ROOT = join(import.meta.dirname, "..");
-const PROMPTS = join(ROOT, "prompts", "v0");
+/** Prompt set per arm: `rsa` = prompts/v0 (v0.05 dry run), `rsav1` = prompts/v1 (D-26). */
+const promptsFor = (arm: string) => join(ROOT, "prompts", arm === "rsa" ? "v0" : arm.replace(/^rsa/, ""));
 const RELAY_EXT = join(ROOT, "extensions", "rsa-relay-tools", "index.ts");
 
 /** What the relay needs from bench/run.ts. */
@@ -129,6 +130,8 @@ export async function relayRun(
 		return existsSync(f) ? JSON.parse(readFileSync(f, "utf8")) : {};
 	})();
 	const provider = o.model.split("/")[0];
+	const PROMPTS = promptsFor(o.arm);
+	if (!existsSync(join(PROMPTS, "worker.md"))) throw new Error(`no prompts for arm ${o.arm}: ${PROMPTS}`);
 
 	let seq = 0;
 	let t0 = 0;

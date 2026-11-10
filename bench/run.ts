@@ -361,7 +361,7 @@ export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult>
 				const excludes = [...p.withhold, "**/CHANGELOG.md"].map((w) => `':(exclude)${w}'`).join(" ");
 				await must(`git diff --binary ${p.from} ${p.source} -- . ${excludes} | git apply --3way --whitespace=nowarn`, tree);
 			}
-		} else if (o.mode === "agent" && o.arm === "rsa") {
+		} else if (o.mode === "agent" && o.arm.startsWith("rsa")) {
 			// v0.05 dry run (R.05.2): orchestrator + 2 workers; leaves the merged change in `tree`.
 			const { relayRun } = await import("./dryrun.ts");
 			await relayRun(task, repo, o, runDir, tree, res, log, { AGENT_DIR, DIFF_EXCLUDE, EXTENSIONS, REALCTX_MODEL, prepareTree, removeTree, realctxRunConfig });
