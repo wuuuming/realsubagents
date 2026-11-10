@@ -32,8 +32,22 @@ export const ROOT = resolve(import.meta.dirname, "..");
 export const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const GIT_PKGS = join(AGENT_DIR, "git", "github.com");
 /** D-14: the only extensions loaded in benchmark runs (both arms). */
+/**
+ * A pinned export of an extension (`git archive <pin>` + a junction to its node_modules, with a
+ * PINNED_COMMIT file), used when the installed copy has moved on: D:/rsa-bench/pins/<name>-<pin>/.
+ * Create one with `bash bench/pin-ext.sh <repo dir> <name> <commit>`.
+ */
+export const PINS_DIR = process.env.RSA_PINS_DIR ?? "D:/rsa-bench/pins";
+const PIN_FILE: Record<string, string> = JSON.parse(readFileSync(join(ROOT, "bench", "pins.json"), "utf8"));
+const pinned = (name: string, rel: string) => {
+	const d = join(PINS_DIR, `${name}-${PIN_FILE[name]}`);
+	return PIN_FILE[name] && existsSync(join(d, "PINNED_COMMIT")) ? join(d, rel) : undefined;
+};
 export const EXTENSIONS = {
-	realctx: process.env.RSA_REALCTX_EXT ?? join(GIT_PKGS, "WtzLAS", "realctx", "extensions", "realctx", "index.ts"),
+	realctx:
+		process.env.RSA_REALCTX_EXT ??
+		pinned("realctx", join("extensions", "realctx", "index.ts")) ??
+		join(GIT_PKGS, "WtzLAS", "realctx", "extensions", "realctx", "index.ts"),
 	realtasks: process.env.RSA_REALTASKS_EXT ?? join(GIT_PKGS, "st0nie", "realtasks", "index.ts"),
 	usage: join(ROOT, "extensions", "rsa-bench-usage", "index.ts"),
 };
@@ -109,7 +123,8 @@ export interface RunResult {
 	runDir: string;
 }
 
-const gitHead = async (dir: string) => (await sh("git rev-parse --short HEAD", { cwd: dir })).tail.trim();
+const gitHead = async (dir: string) =>
+	existsSync(join(dir, "PINNED_COMMIT")) ? readFileSync(join(dir, "PINNED_COMMIT"), "utf8").trim() : (await sh("git rev-parse --short HEAD", { cwd: dir })).tail.trim();
 export const q = (p: string) => `'${p.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`;
 
 /** Junction on Windows (no admin needed), symlink elsewhere. */
