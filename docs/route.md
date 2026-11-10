@@ -484,3 +484,9 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Found: H-1 fails per task (median 23.6%) but holds per class (within ±3%). Per-task error is bounded by noise (within-task CV 12%) and task-specific P and output style. Proposed D-25.
 - Decided: D-25 accepted by the user.
 - Done: G0.0 passed (`reports/gates/G0.0.md`). v0.05 starts with $41.55 left.
+
+### 2026-11-10 — v0.05 (prompts)
+- Started R.05.1: `prompts/v0/` has `GUIDANCE.md` (vendor guidance mapped to rules, with sources), `orchestrator.md` (PR-4, PR-5), `worker.md` (PR-6, PR-7) and OpenAI overlays.
+- Decided (user input): OpenAI GPT-6 over-engineers (unused tests) and is passive. Handled by per-provider overlays appended to the system prompt, not by the shared prompts, because explicit test or verification instructions cause over-verification on Opus 5.x.
+- Rule: the rsa arm's prompts carry no cost-saving instruction that the baseline lacks, so v0.05 measures the architecture, not a prompt change.
+- Next: tool descriptions (`rsa_dispatch`, `rsa_steer`, `rsa_finish`, `rsa_report`), relay `bench/dryrun.ts` (R.05.2), pilot run.
