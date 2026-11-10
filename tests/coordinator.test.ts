@@ -179,7 +179,8 @@ test("a restarted coordinator resumes the open task and does not re-deliver what
 		await first.shutdown();
 		s.delivered.length = 0;
 
-		const second = new Coordinator(s.deps("B"));
+		const killed: string[] = [];
+		const second = new Coordinator({ ...s.deps("B"), killStale: (_pid, tree) => killed.push(tree) });
 		const sessionEntries = [{ type: "custom_message", customType: "rsa-report", details: { reports: [seq] } }];
 		const out = await second.resume(deliveredSeqs(sessionEntries));
 		assert.match(out!, /resumed task/);

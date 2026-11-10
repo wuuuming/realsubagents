@@ -16,7 +16,7 @@
 import { existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { WorkerProcess, type WorkerReport } from "./runtime/worker.ts";
-import { sh } from "./runtime/sh.ts";
+import { killLeftovers, sh } from "./runtime/sh.ts";
 import { commitTree, createTree, land, mergeCommits, removeTree, snapshot, type TreeSetup } from "./runtime/trees.ts";
 import { newTaskId, type Store, type Task, type Worker } from "./store/store.ts";
 
@@ -54,6 +54,8 @@ export interface CoordinatorDeps {
 	/** For tests: replace the worker process factory. */
 	spawnWorker?: (spec: ConstructorParameters<typeof WorkerProcess>[0], h: ConstructorParameters<typeof WorkerProcess>[1]) => WorkerLike;
 	checkTimeoutSec?: number;
+	/** For tests: replace the stale-process cleanup run on resume. */
+	killStale?: (pid: number | undefined, tree: string) => unknown;
 }
 
 /** What the coordinator needs from a worker process (WorkerProcess, or a fake in tests). */
@@ -251,6 +253,9 @@ export class Coordinator {
 		const seen = new Set(delivered);
 		const claim = this.d.store.pendingReports(open.id).filter((r) => seen.has(r.seq)).map((r) => r.seq);
 		if (claim.length) this.d.store.claimReports(claim, "orchestrator");
+		// After a hard kill the old worker processes may still run (children outlive their parent on
+		// Windows); two processes must never write one worker session.
+		for (const w of this.d.store.workers(open.id)) if (w.tree && (w.state === "starting" || w.state === "working")) (this.d.killStale ?? killLeftovers)(w.pid, w.tree);
 		for (const w of this.d.store.workers(open.id)) {
 			if (w.state === "starting") this.enqueueLaunch(w.name, w.tree && existsSync(w.tree) ? "redispatch" : "fresh");
 			else if (w.state === "working") this.enqueueLaunch(w.name, hasSession(w.sessionDir) ? "continue" : w.tree && existsSync(w.tree) ? "redispatch" : "fresh");
