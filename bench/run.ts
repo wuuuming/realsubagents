@@ -283,6 +283,8 @@ async function acceptance(task: LoadedTask, tree: string, runDir: string, res: R
 			writeFileSync(baselineFile, header + [...failures].sort().join("\n") + "\n");
 		}
 		// D-18 flake rule: re-run a check once when it shows new failures; only failures seen twice count.
+		const ignore = (loadRepos()[task.repo]?.ignoreFailures ?? []).map((r) => new RegExp(r));
+		if (ignore.length) failures = new Set([...failures].filter((f) => !ignore.some((r) => r.test(f))));
 		const first = compare(failures, readList(baselineFile));
 		if (!writeBaseline && first.newFailures.length) {
 			const again = await runCheck(check, `${sfx}-retry`);

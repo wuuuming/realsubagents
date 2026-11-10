@@ -84,6 +84,11 @@ export interface RepoDef {
 	/** Commands run in the tree after setup and seeding and before the timed run (not metered). */
 	prepare?: string[];
 	prepareTimeoutSec?: number;
+	/**
+	 * Regression failures matching these regexes (against `file::name`) never count. Only for tests
+	 * that depend on the outside world, e.g. live network APIs, whose failures say nothing about the change.
+	 */
+	ignoreFailures?: string[];
 }
 
 export const BENCH_DIR = resolve(import.meta.dirname);
