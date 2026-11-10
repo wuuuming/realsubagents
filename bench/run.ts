@@ -362,7 +362,7 @@ export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult>
 		} else if (o.mode === "agent" && o.arm === "rsa") {
 			// v0.05 dry run (R.05.2): orchestrator + 2 workers; leaves the merged change in `tree`.
 			const { relayRun } = await import("./dryrun.ts");
-			await relayRun(task, repo, o, runDir, tree, res, log);
+			await relayRun(task, repo, o, runDir, tree, res, log, { AGENT_DIR, DIFF_EXCLUDE, EXTENSIONS, REALCTX_MODEL, prepareTree, removeTree, realctxRunConfig });
 		} else if (o.mode === "agent") {
 			await agentRun(task, o, runDir, tree, res);
 		}

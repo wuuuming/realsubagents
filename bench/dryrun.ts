@@ -28,23 +28,26 @@ import { join } from "node:path";
 import { findPiCli } from "../src/pi-cli.ts";
 import { RpcClient, type RpcRecord } from "../src/rpc.ts";
 import { meter } from "./meter.ts";
-import {
-	AGENT_DIR,
-	DIFF_EXCLUDE,
-	EXTENSIONS,
-	prepareTree,
-	REALCTX_MODEL,
-	realctxRunConfig,
-	removeTree,
-	ROOT,
-	type RunOptions,
-	type RunResult,
-} from "./run.ts";
+// Types only: run.ts imports this module while its own top-level await is still pending, so a value
+// import back into run.ts would deadlock. The helpers come in as the `h` parameter instead.
+import type { RunOptions, RunResult } from "./run.ts";
 import { killLeftovers, must, sh } from "./sh.ts";
 import type { LoadedTask, RepoDef } from "./task.ts";
 
+const ROOT = join(import.meta.dirname, "..");
 const PROMPTS = join(ROOT, "prompts", "v0");
 const RELAY_EXT = join(ROOT, "extensions", "rsa-relay-tools", "index.ts");
+
+/** What the relay needs from bench/run.ts. */
+export interface RunnerHelpers {
+	AGENT_DIR: string;
+	DIFF_EXCLUDE: string[];
+	EXTENSIONS: { realctx: string; realtasks: string; usage: string };
+	REALCTX_MODEL: string;
+	prepareTree: (task: LoadedTask, repo: RepoDef, tree: string, log: (s: string) => void) => Promise<void>;
+	removeTree: (repo: RepoDef, tree: string) => Promise<void>;
+	realctxRunConfig: (user: Record<string, unknown>, sessionModel: string, realctxModel: string) => Record<string, unknown>;
+}
 const GIT_ID = "-c user.name=rsa-relay -c user.email=relay@rsa.local -c commit.gpgsign=false";
 const MAX_CONTINUATIONS = 2;
 const MAX_NUDGES = 2;
@@ -101,7 +104,9 @@ export async function relayRun(
 	tree: string,
 	res: RunResult,
 	log: (s: string) => void,
+	h: RunnerHelpers,
 ): Promise<void> {
+	const { AGENT_DIR, DIFF_EXCLUDE, EXTENSIONS, REALCTX_MODEL, prepareTree, removeTree, realctxRunConfig } = h;
 	const relay: RelayLog = { workerSetupMs: 0, events: [], merges: 0, conflicts: 0 };
 	(res as RunResult & { relay: RelayLog }).relay = relay;
 	const agents: Record<Role, Agent> = {
