@@ -57,10 +57,10 @@ The design doc says *what* to build. This route says *in what order*, *how each 
 | --- | --- | --- | --- | --- | --- |
 | H-1 | Cost-model prediction error (held-out, per-class aggregate; D-25) | within ±15% | v0.0 | per task: median 23.6% (6/13 within); per class aggregate: −0.7% / −2.6% / +0.2%; noise floor (within-task CV) 12% | ✅ (D-25) |
 | H-2 | Prompt-cache hit rate (cache read ÷ total input), per role | ≥ 90% | v0.0 | — | — |
-| H-3 | Serial fraction of parallel runs | < 25% | v0.05 | — | — |
+| H-3 | Serial fraction of parallel runs | < 25% | v0.05 | 41% (imbalance + per-worker verification) | ❌ |
 | H-4a | Missed escalations (direct tasks that compacted or passed break-even) | ≤ 10% | v0.1 | — | — |
 | H-4b | False hints (escalated tasks that ran as one lane and finished under break-even) | ≤ 20% | v0.1 | — | — |
-| H-5 | Overhead share: C\_overhead ÷ C\_rsa (design doc §15.1) | ≤ 15% | v0.05 | — | — |
+| H-5 | Overhead share: C\_overhead ÷ C\_rsa (design doc §15.1) | ≤ 15% | v0.05 | 10% | ✅ |
 | H-6 | Review quality: false accepts / needs\_human rate | 0 / ≤ 15% | v0.1 | — | — |
 | H-7 | Scope violations; builds broken by another group's work in progress | 0; 0 | v0.2 | — | — |
 | H-8 | Tasks blocked on a shared-zone (hub) file | 0 | v0.2 | — | — |
@@ -132,11 +132,11 @@ Parallel tracks, all phases:  T-P Prompts · T-U Upstream · T-W Windows · T-D 
 
 | ID | Item | Deliverable | Status | Evidence |
 | --- | --- | --- | --- | --- |
-| R.05.1 | Prompts v0: PR-4 brief, PR-5 dispatch, PR-6 worker contract, PR-7 Report | `prompts/v0/` | ⬜ | |
-| R.05.2 | Relay script: one orchestrator session and two `pi --mode rpc` workers in two worktrees; the script relays dispatch and Reports and merges at the end | `bench/dryrun.ts` | ⬜ | |
-| R.05.3 | Run ≥ 4 large parallel tasks, N = 3 | Runs metered as in v0.0 | ⬜ | |
-| R.05.4 | Fit g\_w and per-Report, per-brief overhead; update the cost model | Cost model v1 | ⬜ | |
-| R.05.5 | Dry-run report and go / no-go decision | `reports/gates/v0.05.md`, D-n | ⬜ | |
+| R.05.1 | Prompts v0: PR-4 brief, PR-5 dispatch, PR-6 worker contract, PR-7 Report | `prompts/v0/` | ✅ | `prompts/v0/` + GUIDANCE.md, OpenAI overlays |
+| R.05.2 | Relay script: one orchestrator session and two `pi --mode rpc` workers in two worktrees; the script relays dispatch and Reports and merges at the end | `bench/dryrun.ts` | ✅ | `bench/dryrun.ts`, `extensions/rsa-relay-tools` |
+| R.05.3 | Run ≥ 4 large parallel tasks, N = 3 | Runs metered as in v0.0 | ✅ | 4 tasks × N = 3, 12/12 accepted, $23.48 |
+| R.05.4 | Fit g\_w and per-Report, per-brief overhead; update the cost model | Cost model v1 | ✅ | g_w ≈ g, P_w ≈ P; orchestrator ≈ $0.25/run; 20% saving needs n ≈ 150 (report 002) |
+| R.05.5 | Dry-run report and go / no-go decision | `reports/gates/v0.05.md`, D-n | 🟨 | report `reports/bench/002-dryrun.md`; decision pending (user) |
 
 Time is measured as the critical path of model and tool time; relay latency counts as zero and is noted.
 
@@ -497,3 +497,10 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Pilot `pi-par-osc133-npm-stale/rsa-1`: accepted, $1.42, 4.5 min (baseline mean $1.51, 6.5 min). Orch $0.28, w1 $0.52, w2 $0.62; clean merge; the orchestrator checked the merged tree before finishing. Worker summaries ran 630–905 characters, beyond the "3 lines" in PR-7 (prompt tuning later).
 - Fixed: one regression test calls the live OpenRouter API, and it failed twice during a network outage. Rescore accepted the run. Added `ignoreFailures` to `bench/repos.json` for tests that depend on the outside world.
 - Started: R.05.3, `ARM=rsa bench/batch.sh 3` (4 large-parallel tasks × N=3; the pilot is osc133 #1).
+
+### 2026-11-10 — v0.05 (dry run results)
+- Done: 12 rsa runs, all accepted (shift-chord rsa-2 after rescore: an untouched chord timer test timed out under load). Report `reports/bench/002-dryrun.md`; `bench/compare.ts`.
+- Result: median cost ratio 99%, time ratio 86% → **G0.05 NO-GO as written**. H-5 10% ✅, H-3 41% ❌.
+- Found: editing parallelises (worker 143 s vs baseline 373 s to the last edit), but every worker verifies its own part with slow suites (contract rule 4), and the splits follow unequal task parts. If balanced, the time ratio would be 71%.
+- Found: cost savings come out as designed (reads −$0.23, realctx −$0.13) but are cancelled by duplicated prefix writes (+$0.20) and output (+$0.13). The model puts a 20% saving at n ≈ 150 calls per session.
+- Next: user decision on G0.05 (D-26).

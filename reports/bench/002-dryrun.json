@@ -1,0 +1,227 @@
+{
+	"rows": [
+		{
+			"task": "pi-par-orca-durable-trust",
+			"baseline": {
+				"runs": 2,
+				"accepted": 2,
+				"cost": 3.3063376,
+				"wallMin": 11.804108333333334
+			},
+			"rsa": {
+				"runs": 3,
+				"accepted": 3,
+				"cost": 2.7160219333333337,
+				"wallMin": 7.145827777777778
+			},
+			"costRatio": 0.8214593492610476,
+			"timeRatio": 0.6053678580362439
+		},
+		{
+			"task": "pi-par-osc133-npm-stale",
+			"baseline": {
+				"runs": 2,
+				"accepted": 2,
+				"cost": 1.5088377,
+				"wallMin": 6.072383333333334
+			},
+			"rsa": {
+				"runs": 3,
+				"accepted": 3,
+				"cost": 1.4152910666666667,
+				"wallMin": 4.6748111111111115
+			},
+			"costRatio": 0.93800086428558,
+			"timeRatio": 0.769847826544401
+		},
+		{
+			"task": "pi-par-shift-chord-pnpm",
+			"baseline": {
+				"runs": 2,
+				"accepted": 2,
+				"cost": 1.4760532,
+				"wallMin": 6.364125
+			},
+			"rsa": {
+				"runs": 3,
+				"accepted": 3,
+				"cost": 1.9564101333333337,
+				"wallMin": 6.017461111111111
+			},
+			"costRatio": 1.3254333470726758,
+			"timeRatio": 0.945528428670259
+		},
+		{
+			"task": "pi-par-wsl-durable-ranking",
+			"baseline": {
+				"runs": 2,
+				"accepted": 2,
+				"cost": 2.5681375999999996,
+				"wallMin": 10.106333333333334
+			},
+			"rsa": {
+				"runs": 3,
+				"accepted": 3,
+				"cost": 2.687599333333333,
+				"wallMin": 10.086794444444443
+			},
+			"costRatio": 1.0465168740698838,
+			"timeRatio": 0.9980666688655078
+		}
+	],
+	"g005": {
+		"medianCostRatio": 0.9922588691777319,
+		"medianTimeRatio": 0.85768812760733,
+		"pass": false
+	},
+	"runs": [
+		{
+			"run": "pi-par-orca-durable-trust/rsa-1",
+			"accepted": true,
+			"serial": 0.4259895125703186,
+			"overhead": 0.08016608626295768,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-orca-durable-trust/rsa-2",
+			"accepted": true,
+			"serial": 0.536915099386806,
+			"overhead": 0.0939792552738745,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-orca-durable-trust/rsa-3",
+			"accepted": true,
+			"serial": 0.2935021019923232,
+			"overhead": 0.10427856685972639,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-osc133-npm-stale/rsa-1",
+			"accepted": true,
+			"serial": 0.3914681619827656,
+			"overhead": 0.19605665990511342,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-osc133-npm-stale/rsa-2",
+			"accepted": true,
+			"serial": 0.37741629161770107,
+			"overhead": 0.1604697898030875,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-osc133-npm-stale/rsa-3",
+			"accepted": true,
+			"serial": 0.3815066936651844,
+			"overhead": 0.1617157000748356,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-shift-chord-pnpm/rsa-1",
+			"accepted": true,
+			"serial": 0.5335903926190029,
+			"overhead": 0.09896181642594187,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-shift-chord-pnpm/rsa-2",
+			"accepted": true,
+			"serial": 0.25087568955461204,
+			"overhead": 0.11185844645261661,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-shift-chord-pnpm/rsa-3",
+			"accepted": true,
+			"serial": 0.3162619425985709,
+			"overhead": 0.14777438163963535,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-wsl-durable-ranking/rsa-1",
+			"accepted": true,
+			"serial": 0.6273796777688823,
+			"overhead": 0.09988512634329495,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-wsl-durable-ranking/rsa-2",
+			"accepted": true,
+			"serial": 0.6429093970496629,
+			"overhead": 0.10474908463568391,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		},
+		{
+			"run": "pi-par-wsl-durable-ranking/rsa-3",
+			"accepted": true,
+			"serial": 0.5634016729756202,
+			"overhead": 0.08184141211752392,
+			"merges": 2,
+			"conflicts": 0,
+			"steers": 0,
+			"continuations": 0
+		}
+	],
+	"h3": 0.4087288372765421,
+	"h5": 0.10451382574770515,
+	"fit": {
+		"baseline": {
+			"sessions": 8,
+			"n": 58.5,
+			"P": 21151.904201483885,
+			"g": 1529.8083805027977,
+			"delta": 1839.4764957264956,
+			"out": 493.1474358974359
+		},
+		"worker": {
+			"sessions": 24,
+			"n": 29.291666666666668,
+			"P": 21080.5206929453,
+			"g": 1689.212699896502,
+			"delta": 2093.3613086770984,
+			"out": 532.8378378378378
+		},
+		"orchestrator": {
+			"sessions": 12,
+			"n": 9.083333333333334,
+			"P": 10809.27847316891,
+			"g": 1657.8522947907654,
+			"delta": 2737.0825688073396,
+			"out": 483.6605504587156
+		}
+	}
+}
