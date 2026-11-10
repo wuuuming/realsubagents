@@ -155,7 +155,7 @@ Time is measured as the critical path of model and tool time; relay latency coun
 | R1.4 | Coordinator: `rsa_split`, `rsa_steer`, `rsa_finish`; Reports delivered as follow-up messages, exactly once (session scan on resume) | `src/coordinator.ts` | ✅ | `src/coordinator.ts`, `tests/coordinator.test.ts` |
 | R1.5 | Integration by code: `git merge-tree` of the workers' commits, incremental landing into the user's tree, check commands run by code and reported | | ✅ | checks also run on the base during the worker phase; new failures are marked |
 | R1.6 | Worker role in the same extension (`RSA_ROLE=worker`): `rsa_report`, worker contract (prompts v1) | | ⬜ | |
-| R1.7 | Kill and resume: lease, restart workers with `--continue`, deliver pending Reports (H-10) | Kill test | 🟨 | resume logic tested with fake workers; kill test with real Pi pending |
+| R1.7 | Kill and resume: lease, restart workers with `--continue`, deliver pending Reports (H-10) | Kill test | ✅ | `bench/killtest.ts` with a real Pi: 9/9 checks (resume, exactly-once delivery, merged tests pass, cleanup) |
 | R1.8 | Orchestrator prompt section with the time-gain escalation rule; tool surface (`rsa_steer`, `rsa_finish` active only while a task is open) | `prompts/v1/coordinator.md` | ✅ | `prompts/v1/coordinator.md` as a system-prompt section; tools gated by open task |
 | R1.9 | Task budget (USD) from worker usage; leftover cleanup on finish | | ✅ | `budget_usd` on rsa_split; leftover cleanup per worker tree |
 | R1.10 | `/rsa` status | | ✅ | `/rsa` |
@@ -507,3 +507,11 @@ Result: KEEP | REVERT · Side effects on goal metrics:
 - Pilots (kept as `pilot-ext-1`): osc133 accepted, $1.16, 4.3 min (baseline $1.51, 6.1). wsl accepted, $2.85, 14.1 min (baseline $2.57, 10.1): worker tree setup now counts (47 s), checks took 2.2 min, and the orchestrator spent 4.5 min on check failures that already existed on the base.
 - Fixed: checks now also run on the base while the workers work; the integration message marks failures that are new and tells the orchestrator not to investigate the old ones.
 - Next: G0.1 batch, `ARM=ext bench/batch.sh 3` (4 large-parallel × 3, 6 small × 1); kill/resume test with a real Pi.
+
+### 2026-11-10 — v0.1 (first extension batch, fixes)
+- Done: `ext` batch, 18 runs, 18/18 accepted. Small tasks: 0/6 split (correct), median cost 84%, time 76%. Large-parallel: the orchestrator split 5/12 (orca 3/3, wsl 2/3) and worked directly on the smaller osc133 and shift-chord ("each part ~10–20 tool calls, below the threshold"). Median cost 84%, time 91% → G0.1 not met.
+- Found, in split runs (orca, wsl; total 572–752 s): explore ~42 s, worker setup ~75 s (now counted; npm ci + rebuild in every tree), checks ~135 s, then the orchestrator spent 30–260 s investigating check failures that already existed on the base, because random temp paths in Windows EPERM lines defeated the new-vs-base comparison.
+- Found (fairness): the always-on coordinator section said "time matters"; the baseline has no such line, and direct runs came out faster than the baseline. Moved to relay messages only.
+- Found by the kill test: a Pi restarted within 30 s of a crash did not resume (the dead Pi's lease). Fixed: a holder whose pid is gone on this host is taken over; resume retries until the lease frees. `bench/killtest.ts` now passes 9/9.
+- Fixed: worker setup copies ignored build outputs (`trees.build`, pi: `packages/*/dist`): ~13 s per tree instead of 35–75 s; failure comparison normalises paths and numbers and compares failed counts; empty task dirs removed on finish.
+- Next: re-measure the 12 large-parallel runs as arm `ext2`.
