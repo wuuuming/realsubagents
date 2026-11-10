@@ -27,11 +27,11 @@ import { cargoFailures, compare, nodeTapFailures, readList, vitestFailures, type
 import { killLeftovers, must, sh } from "./sh.ts";
 import { type LoadedTask, loadRepos, loadTask, partsOf, regressionChecks, type RepoDef } from "./task.ts";
 
-const ROOT = resolve(import.meta.dirname, "..");
-const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
+export const ROOT = resolve(import.meta.dirname, "..");
+export const AGENT_DIR = process.env.PI_CODING_AGENT_DIR ?? join(homedir(), ".pi", "agent");
 const GIT_PKGS = join(AGENT_DIR, "git", "github.com");
 /** D-14: the only extensions loaded in benchmark runs (both arms). */
-const EXTENSIONS = {
+export const EXTENSIONS = {
 	realctx: process.env.RSA_REALCTX_EXT ?? join(GIT_PKGS, "WtzLAS", "realctx", "extensions", "realctx", "index.ts"),
 	realtasks: process.env.RSA_REALTASKS_EXT ?? join(GIT_PKGS, "st0nie", "realtasks", "index.ts"),
 	usage: join(ROOT, "extensions", "rsa-bench-usage", "index.ts"),
@@ -39,9 +39,9 @@ const EXTENSIONS = {
 const SEED = join(ROOT, "experiments", "tree-seeding", "seed-tree.mjs");
 /** D-13: cheap model for realctx's historian and memory rewrites. */
 /** D-24: empty = realctx's own calls (memory edits, history) use the session model, as in the user's setup. */
-const REALCTX_MODEL = process.env.RSA_REALCTX_MODEL ?? "";
+export const REALCTX_MODEL = process.env.RSA_REALCTX_MODEL ?? "";
 /** Files the harness itself writes into the tree: the seed manifest and realctx's project-shared memories. */
-const DIFF_EXCLUDE = [".rsa-seed-manifest.json", ".pi/realctx"];
+export const DIFF_EXCLUDE = [".rsa-seed-manifest.json", ".pi/realctx"];
 /** D-23: extension commits the phase's runs must use (`RSA_ALLOW_DRIFT=1` to override). */
 const PINS: Record<string, string> = JSON.parse(readFileSync(join(ROOT, "bench", "pins.json"), "utf8"));
 
@@ -107,14 +107,14 @@ export interface RunResult {
 }
 
 const gitHead = async (dir: string) => (await sh("git rev-parse --short HEAD", { cwd: dir })).tail.trim();
-const q = (p: string) => `'${p.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`;
+export const q = (p: string) => `'${p.replaceAll("\\", "/").replaceAll("'", "'\\''")}'`;
 
 /** Junction on Windows (no admin needed), symlink elsewhere. */
 function linkDir(target: string, path: string): void {
 	symlinkSync(target, path, process.platform === "win32" ? "junction" : "dir");
 }
 
-async function prepareTree(task: LoadedTask, repo: RepoDef, tree: string, log: (s: string) => void): Promise<void> {
+export async function prepareTree(task: LoadedTask, repo: RepoDef, tree: string, log: (s: string) => void): Promise<void> {
 	await must(`git worktree add --detach ${q(tree)} ${task.base}`, repo.base, 300);
 	for (const rel of repo.setup?.link ?? []) {
 		const src = join(repo.setup!.from, rel);
@@ -133,7 +133,7 @@ async function prepareTree(task: LoadedTask, repo: RepoDef, tree: string, log: (
 	}
 }
 
-async function removeTree(repo: RepoDef, tree: string): Promise<void> {
+export async function removeTree(repo: RepoDef, tree: string): Promise<void> {
 	// Junctions first, so a recursive delete can never follow them into the user's tree.
 	for (const rel of repo.setup?.link ?? []) {
 		const p = join(tree, rel);
@@ -359,6 +359,10 @@ export async function runOnce(taskId: string, o: RunOptions): Promise<RunResult>
 				const excludes = [...p.withhold, "**/CHANGELOG.md"].map((w) => `':(exclude)${w}'`).join(" ");
 				await must(`git diff --binary ${p.from} ${p.source} -- . ${excludes} | git apply --3way --whitespace=nowarn`, tree);
 			}
+		} else if (o.mode === "agent" && o.arm === "rsa") {
+			// v0.05 dry run (R.05.2): orchestrator + 2 workers; leaves the merged change in `tree`.
+			const { relayRun } = await import("./dryrun.ts");
+			await relayRun(task, repo, o, runDir, tree, res, log);
 		} else if (o.mode === "agent") {
 			await agentRun(task, o, runDir, tree, res);
 		}
