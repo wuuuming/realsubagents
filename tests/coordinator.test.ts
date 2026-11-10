@@ -97,6 +97,14 @@ async function setup() {
 	return { dir, root, store, delivered, open, workers, deps, done: () => (store.close(), rmSync(dir, { recursive: true, force: true })) };
 }
 
+test("a lease owner on this host with a dead pid is dead; a live one is not", async () => {
+	const { leaseOwner, ownerIsDead } = await import("../src/coordinator.ts");
+	assert.equal(ownerIsDead(leaseOwner()), false);
+	const { hostname } = await import("node:os");
+	assert.equal(ownerIsDead(`999999-${hostname()}-abc`), true);
+	assert.equal(ownerIsDead("999999-other-host-abc"), false);
+});
+
 test("overlapping paths are found, case- and slash-insensitively", () => {
 	assert.deepEqual(overlaps([{ paths: ["packages/tui"] }, { paths: ["packages/coding-agent"] }]), []);
 	assert.equal(overlaps([{ paths: ["packages/tui"] }, { paths: ["Packages\\TUI\\src"] }]).length, 1);

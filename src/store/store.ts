@@ -392,12 +392,15 @@ export class Store {
 
 	// ---- leases ------------------------------------------------------------------------
 
-	/** Take or renew a named lease. Returns false while another owner holds an unexpired one. */
-	acquire(name: string, owner: string, ttlMs: number): boolean {
+	/**
+	 * Take or renew a named lease. Returns false while another owner holds an unexpired one, unless
+	 * `isDead(holder)` says the holder is gone (a crashed process on this machine).
+	 */
+	acquire(name: string, owner: string, ttlMs: number, isDead?: (holder: string) => boolean): boolean {
 		return this.tx(() => {
 			const now = Date.now();
 			const r = this.db.prepare("SELECT owner, expires FROM leases WHERE name = ?").get(name) as { owner: string; expires: number } | undefined;
-			if (r && r.owner !== owner && r.expires > now) return false;
+			if (r && r.owner !== owner && r.expires > now && !isDead?.(r.owner)) return false;
 			this.db.prepare("INSERT INTO leases(name, owner, expires) VALUES (?, ?, ?) ON CONFLICT(name) DO UPDATE SET owner = excluded.owner, expires = excluded.expires").run(name, owner, now + ttlMs);
 			return true;
 		});

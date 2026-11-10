@@ -18,7 +18,7 @@ import { join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { Coordinator, CoordinatorError, deliveredSeqs } from "../../src/coordinator.ts";
+import { Coordinator, CoordinatorError, deliveredSeqs, leaseOwner } from "../../src/coordinator.ts";
 import { loadTreeSetup, repoInfo } from "../../src/runtime/trees.ts";
 import { Store } from "../../src/store/store.ts";
 import { STATE_VERSION, VERSION } from "../../src/version.ts";
@@ -117,7 +117,7 @@ function coordinatorRole(pi: ExtensionAPI): void {
 			project: info.project,
 			home: rsaHome(),
 			setup: loadTreeSetup(info.root),
-			owner: `${process.pid}-${Date.now().toString(36)}`,
+			owner: leaseOwner(),
 			deliver: (text, details) =>
 				pi.sendMessage({ customType: "rsa-report", content: text, display: true, details }, { triggerTurn: true, deliverAs: "followUp" }),
 			onTaskOpen: setOpenTools,

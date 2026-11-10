@@ -14,6 +14,7 @@
  * injected, so this module is testable without a model.
  */
 import { existsSync, readdirSync } from "node:fs";
+import { hostname } from "node:os";
 import { join } from "node:path";
 import { WorkerProcess, type WorkerReport } from "./runtime/worker.ts";
 import { killLeftovers, sh } from "./runtime/sh.ts";
@@ -103,6 +104,7 @@ export class Coordinator {
 	private queue: Promise<void> = Promise.resolve();
 	private readonly launches = new Set<Promise<void>>();
 	private leaseTimer?: ReturnType<typeof setInterval>;
+	private retryTimer?: ReturnType<typeof setInterval>;
 	private budgetHit = false;
 	private baseChecks?: Promise<CheckRun[]>;
 	taskId?: string;
@@ -145,7 +147,7 @@ export class Coordinator {
 	}
 
 	private takeLease(): boolean {
-		const ok = this.d.store.acquire(`coord:${this.d.project}`, this.d.owner, LEASE_MS);
+		const ok = this.d.store.acquire(`coord:${this.d.project}`, this.d.owner, LEASE_MS, ownerIsDead);
 		if (ok && !this.leaseTimer) {
 			this.leaseTimer = setInterval(() => this.d.store.acquire(`coord:${this.d.project}`, this.d.owner, LEASE_MS), LEASE_MS / 3);
 			this.leaseTimer.unref?.();
@@ -154,6 +156,8 @@ export class Coordinator {
 	}
 
 	private dropLease(): void {
+		if (this.retryTimer) clearInterval(this.retryTimer);
+		this.retryTimer = undefined;
 		if (this.leaseTimer) clearInterval(this.leaseTimer);
 		this.leaseTimer = undefined;
 		this.d.store.release(`coord:${this.d.project}`, this.d.owner);
@@ -247,7 +251,20 @@ export class Coordinator {
 	async resume(delivered: Iterable<number>): Promise<string | undefined> {
 		const open = this.d.store.tasks(this.d.project, true)[0];
 		if (!open) return undefined;
-		if (!this.takeLease()) return `realsubagents: task ${open.id} is coordinated by another Pi session.`;
+		if (!this.takeLease()) {
+			// The holder may be a Pi that just crashed on another machine sharing the home, or one whose
+			// pid we cannot check; retry until its lease expires.
+			if (!this.retryTimer) {
+				this.retryTimer = setInterval(() => {
+					if (this.taskId || !this.d.store.acquire(`coord:${this.d.project}`, this.d.owner, LEASE_MS, ownerIsDead)) return;
+					clearInterval(this.retryTimer);
+					this.retryTimer = undefined;
+					void this.resume(delivered).then((m) => m && this.d.log(m));
+				}, LEASE_MS / 6);
+				this.retryTimer.unref?.();
+			}
+			return `realsubagents: task ${open.id} is coordinated by another Pi session; this session takes over if that one stops.`;
+		}
 		this.taskId = open.id;
 		this.d.onTaskOpen(true);
 		const seen = new Set(delivered);
@@ -515,6 +532,22 @@ export function describeCheck(after: CheckRun, base?: CheckRun): string {
 	if (!fresh.length || (nb !== undefined && na !== undefined && na <= nb))
 		return `${head}; it failed the same way on the base (${status(base)}) before the workers' changes, with no new failure lines. These failures are not caused by the task; no need to investigate them.`;
 	return `${head}; it also failed on the base (${status(base)}). Failure lines that are new since the base:\n${fresh.slice(0, CHECK_TAIL_LINES).join("\n")}`;
+}
+
+/** Lease owners are `<pid>-<host>-<nonce>`; a holder on this host whose process is gone is dead. */
+export function leaseOwner(): string {
+	return `${process.pid}-${hostname()}-${Date.now().toString(36)}`;
+}
+
+export function ownerIsDead(holder: string): boolean {
+	const m = /^(\d+)-(.+)-[0-9a-z]+$/.exec(holder);
+	if (!m || m[2] !== hostname()) return false;
+	try {
+		process.kill(Number(m[1]), 0);
+		return false;
+	} catch (e) {
+		return (e as NodeJS.ErrnoException).code === "ESRCH";
+	}
 }
 
 function hasSession(dir?: string): boolean {

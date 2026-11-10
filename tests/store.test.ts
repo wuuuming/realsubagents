@@ -102,7 +102,10 @@ test("a lease excludes a second owner until it expires", async () => {
 		assert.equal(store.acquire("coord:p1", "A", 50), true, "the owner renews");
 		await new Promise((r) => setTimeout(r, 80));
 		assert.equal(other.acquire("coord:p1", "B", 50), true, "taken over after expiry");
-		other.release("coord:p1", "B");
+		assert.equal(store.acquire("coord:p1", "A", 10_000, (h) => h === "B"), true, "a dead holder is taken over at once");
+		assert.equal(other.acquire("coord:p1", "B", 10_000), false);
+		other.release("coord:p1", "A");
+		store.release("coord:p1", "A");
 		assert.equal(store.acquire("coord:p1", "A", 50), true);
 	} finally {
 		other.close();
